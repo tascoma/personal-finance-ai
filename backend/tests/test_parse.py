@@ -378,6 +378,37 @@ async def test_duplicate_documents_flagged_on_second_pass(
 
 
 @pytest.mark.asyncio
+async def test_parse_refuses_unknown_doc_type(
+    session_factory, open_period, upload_root
+):
+    """An 'unknown' doc_type must not silently fall through to the statement extractor."""
+    period_dir = upload_root / str(open_period.period_id)
+    period_dir.mkdir(parents=True, exist_ok=True)
+    file_path = period_dir / "mystery.pdf"
+    file_path.write_bytes(b"%PDF-1.4 placeholder")
+
+    async with session_factory() as session:
+        doc = Document(
+            period_id=open_period.period_id,
+            document_type="unknown",
+            file_name="mystery.pdf",
+            file_path=str(file_path),
+            source_account_code=None,
+            parse_status="pending",
+        )
+        session.add(doc)
+        await session.commit()
+        await session.refresh(doc)
+
+    async with session_factory() as session:
+        with pytest.raises(ParseError, match="unknown"):
+            await parse_service.parse_document(session, doc.document_id)
+
+        refreshed = await session.get(Document, doc.document_id)
+        assert refreshed.parse_status == "failed"
+
+
+@pytest.mark.asyncio
 async def test_parse_blocked_when_period_not_open(
     session_factory, csv_document, open_period
 ):
@@ -477,7 +508,8 @@ async def test_parse_route_blocked_for_non_open_period(
     response = await client.post(
         f"/api/v1/periods/{open_period.period_id}/documents/{csv_document.document_id}/parse"
     )
-    assert response.status_code == 500
+    assert response.status_code == 400
+    assert "open" in response.json()["detail"].lower()
 
 
 # ── mortgage statement tests ──────────────────────────────────────────────────

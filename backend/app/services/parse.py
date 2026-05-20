@@ -243,6 +243,14 @@ async def _extract_transactions(
     if doc_type == "opening_balances":
         raise ParseError("opening_balances handled in caller")
 
+    if doc_type == "unknown":
+        # Without a resolved type, the dispatch below silently routes any PDF
+        # to the statement extractor — which mis-parses paystubs and mortgage
+        # statements as bank statements. Force the orchestrator to run first.
+        raise ParseError(
+            "Document type is 'unknown' — run the orchestrator to classify it before parsing"
+        )
+
     if doc_type == "paystub":
         if extension != ".pdf":
             raise ParseError(f"Paystubs must be .pdf (got {extension})")

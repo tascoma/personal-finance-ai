@@ -12,6 +12,7 @@ from app.services import classify as classify_service
 from app.services import document as document_service
 from app.services import journal as journal_service
 from app.services import parse as parse_service
+from app.services.file_readers import ParseError
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,9 @@ async def parse_document(
         raise HTTPException(status_code=404, detail="Document not found")
     try:
         await parse_service.parse_document(db, document_id=document_id)
+    except ParseError as exc:
+        logger.info("Parse refused for document %s: %s", document_id, exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("Parse failed for document %s: %s", document_id, exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Document parsing failed") from exc
