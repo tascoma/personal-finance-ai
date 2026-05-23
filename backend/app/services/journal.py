@@ -26,7 +26,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Sequence
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -112,12 +112,8 @@ async def delete_manual_entry(
     if entry.created_by != "user":
         raise JournalError("Only manually-created entries can be deleted")
 
-    lines_result = await db.scalars(
-        select(JournalLine).where(JournalLine.entry_id == entry_id)
-    )
-    for line in lines_result.all():
-        await db.delete(line)
-    await db.delete(entry)
+    await db.execute(delete(JournalLine).where(JournalLine.entry_id == entry_id))
+    await db.execute(delete(JournalEntry).where(JournalEntry.entry_id == entry_id))
     await db.commit()
     logger.info("Deleted manual journal entry %s", entry_id)
 
@@ -132,25 +128,22 @@ async def delete_entry(
     For system-created entries (paystub/statement), also reverts the associated
     RawTransactions back to 'approved' so they can be corrected and re-posted.
     """
-    from app.models.raw_transaction import RawTransaction  # local to avoid circular
-
     entry = await db.get(JournalEntry, entry_id)
     if entry is None or entry.period_id != period_id:
         raise JournalError("Journal entry not found")
 
     if entry.created_by == "python":
-        txns_result = await db.scalars(
-            select(RawTransaction).where(
+        await db.execute(
+            update(RawTransaction)
+            .where(
                 RawTransaction.journal_entry_id == entry_id,
                 RawTransaction.period_id == period_id,
             )
+            .values(status="approved", journal_entry_id=None)
         )
-        for txn in txns_result.all():
-            txn.status = "approved"
-            txn.journal_entry_id = None
 
     await db.execute(delete(JournalLine).where(JournalLine.entry_id == entry_id))
-    await db.delete(entry)
+    await db.execute(delete(JournalEntry).where(JournalEntry.entry_id == entry_id))
     await db.commit()
     logger.info("Deleted journal entry %s (created_by=%s)", entry_id, entry.created_by)
 
