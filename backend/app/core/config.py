@@ -43,6 +43,20 @@ class Settings(BaseSettings):
     # Maximum file upload size in megabytes
     max_upload_size_mb: int = 20
 
+    # Apple Push Notification service (APNs). All four key/team/bundle/p8
+    # settings must be set for `app.services.apns.notify_user()` to attempt
+    # delivery — otherwise it's a graceful no-op. The .p8 value is the file
+    # contents (multi-line PEM), provided via env var in a single line with
+    # \n escapes for Render's env-var UI.
+    apns_auth_key_p8: str = ""
+    apns_key_id: str = ""
+    apns_team_id: str = ""
+    apns_bundle_id: str = "com.tascoma.personalfinanceai"
+    # True for Debug/Staging builds (registered with APNs sandbox); False for
+    # TestFlight/App Store (registered with prod APNs). The simulator's APNs
+    # env is the sandbox, so this should be True for local dev too.
+    apns_use_sandbox: bool = True
+
     model_config = {"env_file": Path(__file__).resolve().parents[3] / ".env"}
 
     @model_validator(mode="after")

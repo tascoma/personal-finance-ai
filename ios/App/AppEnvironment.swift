@@ -10,6 +10,7 @@ final class AppEnvironment {
     let refresher: TokenRefresher
     let api: APIClient
     let biometric: BiometricController
+    let push: PushNotificationsController
 
     init() {
         self.baseURL = AppEnvironment.loadBaseURL()
@@ -27,6 +28,8 @@ final class AppEnvironment {
         self.refresher = refresher
         self.api = APIClient(baseURL: baseURL, session: session, auth: auth, refresher: refresher)
         self.biometric = BiometricController()
+        self.push = PushNotificationsController()
+        self.push.configure(api: self.api)
     }
 
     private static func loadBaseURL() -> URL {

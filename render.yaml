@@ -23,6 +23,18 @@ services:
         sync: false
       - key: LOG_LEVEL
         value: INFO
+      # APNs (iOS push) — leave unset until Apple Developer credentials are
+      # provisioned; backend's notify_user() is a graceful no-op without them.
+      - key: APNS_AUTH_KEY_P8
+        sync: false
+      - key: APNS_KEY_ID
+        sync: false
+      - key: APNS_TEAM_ID
+        sync: false
+      - key: APNS_BUNDLE_ID
+        value: com.tascoma.personalfinanceai
+      - key: APNS_USE_SANDBOX
+        value: "false"
 
   - type: web
     name: personal-finance-ai-stage
@@ -48,6 +60,18 @@ services:
         sync: false
       - key: LOG_LEVEL
         value: INFO
+      # APNs (iOS push). Stage targets APNs sandbox so Debug/Staging iOS
+      # builds can deliver here.
+      - key: APNS_AUTH_KEY_P8
+        sync: false
+      - key: APNS_KEY_ID
+        sync: false
+      - key: APNS_TEAM_ID
+        sync: false
+      - key: APNS_BUNDLE_ID
+        value: com.tascoma.personalfinanceai
+      - key: APNS_USE_SANDBOX
+        value: "true"
 
 databases:
   - name: pfa-db

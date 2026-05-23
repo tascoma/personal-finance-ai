@@ -30,6 +30,14 @@ struct SignOutMenuButton: View {
                 }
             }
 
+            if !pushIsRegistered {
+                Button {
+                    Task { await env.push.requestAuthorizationIfNeeded() }
+                } label: {
+                    Label("Enable notifications", systemImage: "bell.badge")
+                }
+            }
+
             Button(role: .destructive) {
                 Task { await signOut() }
             } label: {
@@ -41,9 +49,18 @@ struct SignOutMenuButton: View {
         .disabled(isSigningOut)
     }
 
+    private var pushIsRegistered: Bool {
+        if case .registered = env.push.status { return true }
+        return false
+    }
+
     private func signOut() async {
         isSigningOut = true
         defer { isSigningOut = false }
+        // Drop the APNs token from our backend first so we stop pushing this
+        // device. Best-effort — backend will also delete dead tokens on
+        // APNs 410 responses.
+        await env.push.deregisterCurrentToken()
         try? await env.api.perform(.logout)
         // Disable biometric on sign-out so the next user must opt in explicitly.
         env.biometric.disable()

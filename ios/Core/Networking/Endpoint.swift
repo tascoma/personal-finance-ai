@@ -46,6 +46,19 @@ struct Endpoint {
         return Endpoint(method: "GET", path: "/statements/cashflow\(suffix)", requiresAuth: true)
     }
 
+    static func registerDeviceToken(apnsToken: String, bundleId: String) -> Endpoint {
+        struct Body: Encodable {
+            let apns_token: String
+            let bundle_id: String
+        }
+        let body = try? JSONEncoder.api().encode(Body(apns_token: apnsToken, bundle_id: bundleId))
+        return Endpoint(method: "POST", path: "/auth/device-tokens", body: body, requiresAuth: true)
+    }
+
+    static func deleteDeviceToken(apnsToken: String) -> Endpoint {
+        Endpoint(method: "DELETE", path: "/auth/device-tokens/\(apnsToken)", requiresAuth: true)
+    }
+
     func urlRequest(baseURL: URL) -> URLRequest {
         let fullURL = URL(string: baseURL.absoluteString + path) ?? baseURL
         var req = URLRequest(url: fullURL)
