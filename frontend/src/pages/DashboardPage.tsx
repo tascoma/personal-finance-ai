@@ -83,10 +83,22 @@ export default function DashboardPage() {
     const lastNw = histVals[n - 1]
     const lastLabel = histLabels[n - 1]
 
-    const m = lastLabel.match(/^(\d{4})-(\d{2})$/)
-    if (!m) return null
-    const ly = parseInt(m[1], 10)
-    const lm = parseInt(m[2], 10)
+    // Backend emits "MMM YYYY" (e.g. "Apr 2026"). Also accept "YYYY-MM" so the
+    // forecast keeps working if a future endpoint changes format.
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    const parseLabel = (label: string): [number, number] | null => {
+      const dash = label.match(/^(\d{4})-(\d{2})$/)
+      if (dash) return [parseInt(dash[1], 10), parseInt(dash[2], 10)]
+      const space = label.match(/^([A-Z][a-z]{2}) (\d{4})$/)
+      if (space) {
+        const idx = monthNames.indexOf(space[1])
+        if (idx >= 0) return [parseInt(space[2], 10), idx + 1]
+      }
+      return null
+    }
+    const parsed = parseLabel(lastLabel)
+    if (!parsed) return null
+    const [ly, lm] = parsed
     const targetYear = 2026
     const monthsRemaining = Math.max(0, (targetYear - ly) * 12 + (12 - lm))
 
@@ -114,7 +126,7 @@ export default function DashboardPage() {
       const total = lm + k
       const year = ly + Math.floor((total - 1) / 12)
       const month = ((total - 1) % 12) + 1
-      futureLabels.push(`${year}-${String(month).padStart(2, '0')}`)
+      futureLabels.push(`${monthNames[month - 1]} ${year}`)
     }
 
     const trailingFuture = Array.from({ length: monthsRemaining }, (_, k) => lastNw + (k + 1) * avgMonthlyNet)
