@@ -49,8 +49,42 @@ targets:
           UIApplicationSupportsMultipleScenes: false
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+    entitlements:
+      path: App/PersonalFinanceAI.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.tascoma.personalfinanceai
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tascoma.personalfinanceai
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: App/PersonalFinanceAI.entitlements
+    dependencies:
+      - target: PersonalFinanceWidget
+
+  PersonalFinanceWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - Widget
+      - Shared
+    info:
+      path: Widget/Generated-Info.plist
+      properties:
+        CFBundleDisplayName: Personal Finance Widget
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Widget/PersonalFinanceWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.tascoma.personalfinanceai
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tascoma.personalfinanceai.widget
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: Widget/PersonalFinanceWidget.entitlements
+        SKIP_INSTALL: NO

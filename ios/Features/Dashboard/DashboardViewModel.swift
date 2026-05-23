@@ -42,11 +42,27 @@ final class DashboardViewModel {
         do {
             let response = try await api.perform(.dashboard(), as: DashboardResponse.self)
             state = .loaded(response)
+            writeWidgetSnapshot(from: response)
         } catch let err as APIError {
             state = .error(err.errorDescription ?? "Failed to load")
         } catch {
             state = .error(error.localizedDescription)
         }
+    }
+
+    private func writeWidgetSnapshot(from response: DashboardResponse) {
+        let lastBar = response.periodBars.last
+        let snapshot = WidgetSnapshot(
+            netWorth: response.netWorth,
+            totalAssets: response.totalAssets,
+            totalLiabilities: response.totalLiabilities,
+            monthlyIncome: lastBar?.income ?? 0,
+            monthlyExpenses: lastBar?.expenses ?? 0,
+            monthlyNet: lastBar?.net ?? 0,
+            periodLabel: lastBar?.periodLabel ?? "—",
+            capturedAt: Date()
+        )
+        SharedContainer.writeSnapshot(snapshot)
     }
 
     func refresh() async {
