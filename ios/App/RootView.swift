@@ -2,19 +2,31 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppEnvironment.self) private var env
-    @State private var phase: Phase = .bootstrapping
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var phase: Phase = .biometric
+    @State private var didStart = false
 
     enum Phase: Equatable {
-        case bootstrapping
-        case ready
+        case biometric          // Showing BiometricGateView (only if biometric enabled)
+        case bootstrapping      // Trying cookie refresh + /auth/me
+        case ready              // MainTabView or LoginView, depending on auth
     }
 
     var body: some View {
         Group {
             switch phase {
+            case .biometric:
+                if env.biometric.isEnabled {
+                    BiometricGateView {
+                        Task { await beginBootstrap() }
+                    }
+                } else {
+                    // Skip the gate entirely if biometric isn't opted in.
+                    BootstrappingView()
+                        .task { await beginBootstrap() }
+                }
             case .bootstrapping:
                 BootstrappingView()
-                    .task { await bootstrap() }
             case .ready:
                 if env.auth.isAuthenticated {
                     MainTabView()
@@ -23,9 +35,31 @@ struct RootView: View {
                 }
             }
         }
+        .onAppear {
+            if !didStart {
+                didStart = true
+                // If biometric isn't enabled, the .biometric phase view's .task
+                // will fire bootstrap immediately. Otherwise we wait for unlock.
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            switch newPhase {
+            case .background, .inactive:
+                // Re-lock on backgrounding so warm foregrounding re-prompts.
+                if env.biometric.isEnabled, env.auth.isAuthenticated {
+                    env.biometric.lockIfEnabled()
+                    phase = .biometric
+                }
+            case .active:
+                break
+            @unknown default:
+                break
+            }
+        }
     }
 
-    private func bootstrap() async {
+    private func beginBootstrap() async {
+        phase = .bootstrapping
         do {
             let token = try await env.refresher.refresh(baseURL: env.baseURL, session: env.session)
             env.auth.accessToken = token
@@ -49,6 +83,7 @@ private struct BootstrappingView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             try? await Task.sleep(for: .seconds(3))
             showSlowHint = true

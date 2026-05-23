@@ -9,6 +9,7 @@ final class AppEnvironment {
     let auth: AuthStore
     let refresher: TokenRefresher
     let api: APIClient
+    let biometric: BiometricController
 
     init() {
         self.baseURL = AppEnvironment.loadBaseURL()
@@ -25,6 +26,7 @@ final class AppEnvironment {
         self.auth = auth
         self.refresher = refresher
         self.api = APIClient(baseURL: baseURL, session: session, auth: auth, refresher: refresher)
+        self.biometric = BiometricController()
     }
 
     private static func loadBaseURL() -> URL {

@@ -35,6 +35,7 @@ final class LoginViewModel {
             auth.setSession(token: token.accessToken)
             let user = try await api.perform(.me, as: User.self)
             auth.currentUser = user
+            auth.pendingBiometricOptIn = true
             password = ""
         } catch let err as APIError {
             errorMessage = err.errorDescription

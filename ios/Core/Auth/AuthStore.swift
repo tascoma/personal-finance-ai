@@ -6,6 +6,9 @@ import Observation
 final class AuthStore {
     var accessToken: String?
     var currentUser: User?
+    /// Set true after a fresh password sign-in (not auto-resume) so the next view
+    /// can offer the biometric opt-in once. Consumer must reset to false.
+    var pendingBiometricOptIn: Bool = false
 
     var isAuthenticated: Bool { accessToken != nil }
 
@@ -17,5 +20,6 @@ final class AuthStore {
     func clear() {
         self.accessToken = nil
         self.currentUser = nil
+        self.pendingBiometricOptIn = false
     }
 }
