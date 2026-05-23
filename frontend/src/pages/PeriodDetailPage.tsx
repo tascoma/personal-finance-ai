@@ -308,8 +308,20 @@ export default function PeriodDetailPage() {
                       <td>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                           {canEdit && doc.document_type !== 'manual' && (doc.parse_status === 'pending' || doc.parse_status === 'failed') && (
-                            <button className="btn btn-primary btn-sm" disabled={parseDoc.isPending || parseAll.isPending} onClick={() => parseDoc.mutate(doc.document_id)} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                              {parseDoc.isPending && parseDoc.variables === doc.document_id && <span className="spinner" />}
+                            <button
+                              className="btn btn-primary btn-sm"
+                              disabled={parseDoc.isPending || parseAll.isPending}
+                              onClick={() => {
+                                if (doc.document_type === 'unknown') {
+                                  setOrchestrationResult(null)
+                                  parseAll.mutate()
+                                } else {
+                                  parseDoc.mutate(doc.document_id)
+                                }
+                              }}
+                              style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                            >
+                              {((parseDoc.isPending && parseDoc.variables === doc.document_id) || (parseAll.isPending && doc.document_type === 'unknown')) && <span className="spinner" />}
                               Parse
                             </button>
                           )}

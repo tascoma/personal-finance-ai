@@ -1,0 +1,15 @@
+// Shared across all configurations.
+// Per-config overrides live in Debug/Staging/Release.xcconfig.
+
+PRODUCT_BUNDLE_IDENTIFIER = com.tascoma.personalfinanceai
+TARGETED_DEVICE_FAMILY = 1,2
+IPHONEOS_DEPLOYMENT_TARGET = 17.0
+SWIFT_VERSION = 5.9
+ENABLE_BITCODE = NO
+
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+// Developer team is per-machine; override locally via an untracked
+// Config/Local.xcconfig included from Debug.xcconfig if needed.
+DEVELOPMENT_TEAM =

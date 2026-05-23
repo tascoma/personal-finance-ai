@@ -2,13 +2,15 @@ import logging
 import uuid
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db_session
 from app.models.account import Account
 from app.models.raw_transaction import RawTransaction
+from app.models.user import User
+from app.services import apns as apns_service
 from app.schemas.account import AccountRead
 from app.schemas.api_responses import (
     OperationResult,
@@ -129,6 +131,8 @@ async def get_period_detail(
 async def update_period_status(
     period_id: uuid.UUID,
     body: StatusUpdateRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> PeriodRead:
     try:
@@ -136,6 +140,20 @@ async def update_period_status(
     except period_service.PeriodError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     logger.info("Updated period %s status to %s", period_id, body.new_status)
+
+    # When the user advances the workflow to pending_close, push a reminder to
+    # their other devices. Background-scheduled so the HTTP response doesn't
+    # wait on APNs latency.
+    if body.new_status == "pending_close":
+        background_tasks.add_task(
+            apns_service.notify_user,
+            db,
+            current_user.user_id,
+            title="Ready to close",
+            body=f"Period {period.period_start:%b %Y} is ready to close.",
+            extra={"period_id": str(period_id), "kind": "period_pending_close"},
+        )
+
     return PeriodRead.model_validate(period)
 
 

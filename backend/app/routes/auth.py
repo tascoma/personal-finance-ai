@@ -1,12 +1,22 @@
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.dependencies import get_current_user, get_db_session
+from app.models.device_token import DeviceToken
 from app.models.user import User
-from app.schemas.auth import TokenResponse, UserLogin, UserRead, UserRegister
+from app.schemas.auth import (
+    DeviceTokenRead,
+    DeviceTokenRegister,
+    TokenResponse,
+    UserLogin,
+    UserRead,
+    UserRegister,
+)
 from app.services.auth import (
     AuthError,
     authenticate_user,
@@ -125,3 +135,62 @@ async def logout(
 @router.get("/me", response_model=UserRead)
 async def me(current_user: User = Depends(get_current_user)) -> UserRead:
     return UserRead.model_validate(current_user)
+
+
+@router.post(
+    "/device-tokens",
+    response_model=DeviceTokenRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def register_device_token(
+    body: DeviceTokenRegister,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> DeviceTokenRead:
+    """Register or refresh an APNs token for the calling user.
+
+    The same physical device can re-register the same token (after app upgrade
+    or relaunch); we upsert and re-bind to the current user if needed, and
+    bump `last_seen_at`.
+    """
+    now = datetime.now(timezone.utc)
+    existing = (
+        await db.execute(select(DeviceToken).where(DeviceToken.apns_token == body.apns_token))
+    ).scalar_one_or_none()
+    if existing is not None:
+        existing.user_id = current_user.user_id
+        existing.bundle_id = body.bundle_id
+        existing.last_seen_at = now
+        await db.commit()
+        await db.refresh(existing)
+        return DeviceTokenRead.model_validate(existing)
+
+    token = DeviceToken(
+        user_id=current_user.user_id,
+        apns_token=body.apns_token,
+        bundle_id=body.bundle_id,
+    )
+    db.add(token)
+    await db.commit()
+    await db.refresh(token)
+    return DeviceTokenRead.model_validate(token)
+
+
+@router.delete(
+    "/device-tokens/{apns_token}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_device_token(
+    apns_token: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """Drop a token (called by the iOS app on logout). Idempotent — succeeds
+    silently if the token isn't on file or belongs to another user."""
+    await db.execute(
+        delete(DeviceToken).where(
+            DeviceToken.apns_token == apns_token,
+            DeviceToken.user_id == current_user.user_id,
+        )
+    )
+    await db.commit()
