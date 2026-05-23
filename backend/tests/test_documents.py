@@ -215,3 +215,79 @@ async def test_delete_document(client: AsyncClient, session_factory, open_period
         remaining = await session.scalar(select(Document))
     assert remaining is None
     assert not file_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_document_cascades_to_parsed_data(
+    client: AsyncClient, session_factory, open_period
+):
+    """Deleting a parsed (and posted) document must cascade through
+    raw_transactions, review_queue entries, and journal_entries/lines."""
+    import uuid
+    from datetime import date
+    from decimal import Decimal
+
+    from app.models.journal import JournalEntry, JournalLine
+    from app.models.raw_transaction import RawTransaction
+    from app.models.review_queue import ReviewQueue
+
+    files = {"file": ("statement.pdf", BytesIO(b"%PDF"), "application/pdf")}
+    data = {"document_type": "bank_statement"}
+    await client.post(
+        f"/api/v1/periods/{open_period.period_id}/documents", data=data, files=files
+    )
+
+    async with session_factory() as session:
+        doc = await session.scalar(select(Document))
+        assert doc is not None
+        doc_id = doc.document_id
+        period_id = doc.period_id
+
+        entry_id = uuid.uuid4()
+        session.add(JournalEntry(
+            entry_id=entry_id,
+            period_id=period_id,
+            entry_date=date(2026, 4, 1),
+            description="test",
+            source_type="statement",
+            source_document_id=doc_id,
+            created_by="python",
+        ))
+        session.add(JournalLine(
+            entry_id=entry_id, account_code=1000,
+            debit_amount=Decimal("10"), credit_amount=Decimal("0"),
+        ))
+        session.add(JournalLine(
+            entry_id=entry_id, account_code=2000,
+            debit_amount=Decimal("0"), credit_amount=Decimal("10"),
+        ))
+
+        raw_id = uuid.uuid4()
+        session.add(RawTransaction(
+            raw_txn_id=raw_id,
+            document_id=doc_id,
+            period_id=period_id,
+            txn_date=date(2026, 4, 1),
+            description="test txn",
+            amount=Decimal("10"),
+            status="posted",
+            journal_entry_id=entry_id,
+        ))
+        session.add(ReviewQueue(
+            period_id=period_id,
+            raw_txn_id=raw_id,
+            review_type="unclassified",
+        ))
+        await session.commit()
+
+    response = await client.delete(
+        f"/api/v1/periods/{period_id}/documents/{doc_id}"
+    )
+    assert response.status_code == 200
+
+    async with session_factory() as session:
+        assert await session.scalar(select(Document)) is None
+        assert await session.scalar(select(RawTransaction)) is None
+        assert await session.scalar(select(ReviewQueue)) is None
+        assert await session.scalar(select(JournalEntry)) is None
+        assert await session.scalar(select(JournalLine)) is None

@@ -26,7 +26,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Sequence
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -112,12 +112,8 @@ async def delete_manual_entry(
     if entry.created_by != "user":
         raise JournalError("Only manually-created entries can be deleted")
 
-    lines_result = await db.scalars(
-        select(JournalLine).where(JournalLine.entry_id == entry_id)
-    )
-    for line in lines_result.all():
-        await db.delete(line)
-    await db.delete(entry)
+    await db.execute(delete(JournalLine).where(JournalLine.entry_id == entry_id))
+    await db.execute(delete(JournalEntry).where(JournalEntry.entry_id == entry_id))
     await db.commit()
     logger.info("Deleted manual journal entry %s", entry_id)
 
@@ -132,25 +128,22 @@ async def delete_entry(
     For system-created entries (paystub/statement), also reverts the associated
     RawTransactions back to 'approved' so they can be corrected and re-posted.
     """
-    from app.models.raw_transaction import RawTransaction  # local to avoid circular
-
     entry = await db.get(JournalEntry, entry_id)
     if entry is None or entry.period_id != period_id:
         raise JournalError("Journal entry not found")
 
     if entry.created_by == "python":
-        txns_result = await db.scalars(
-            select(RawTransaction).where(
+        await db.execute(
+            update(RawTransaction)
+            .where(
                 RawTransaction.journal_entry_id == entry_id,
                 RawTransaction.period_id == period_id,
             )
+            .values(status="approved", journal_entry_id=None)
         )
-        for txn in txns_result.all():
-            txn.status = "approved"
-            txn.journal_entry_id = None
 
     await db.execute(delete(JournalLine).where(JournalLine.entry_id == entry_id))
-    await db.delete(entry)
+    await db.execute(delete(JournalEntry).where(JournalEntry.entry_id == entry_id))
     await db.commit()
     logger.info("Deleted journal entry %s (created_by=%s)", entry_id, entry.created_by)
 
@@ -193,8 +186,10 @@ async def post_period(db: AsyncSession, period_id: uuid.UUID) -> int:
     )
     accounts_by_code: dict[int, Account] = {a.account_code: a for a in accounts_result.all()}
 
-    # Group paystub txns by document; collect statement txns individually
+    # Paystubs and mortgage statements group all txns from one document into a
+    # single balanced entry; other statement txns post individually.
     paystub_groups: dict[uuid.UUID, list[RawTransaction]] = {}
+    mortgage_groups: dict[uuid.UUID, list[RawTransaction]] = {}
     statement_txns: list[RawTransaction] = []
 
     for txn in approved:
@@ -204,6 +199,8 @@ async def post_period(db: AsyncSession, period_id: uuid.UUID) -> int:
             continue
         if doc.document_type == "paystub":
             paystub_groups.setdefault(doc.document_id, []).append(txn)
+        elif doc.document_type == "mortgage_statement":
+            mortgage_groups.setdefault(doc.document_id, []).append(txn)
         else:
             statement_txns.append(txn)
 
@@ -238,6 +235,21 @@ async def post_period(db: AsyncSession, period_id: uuid.UUID) -> int:
                 txn.status = "posted"
                 txn.journal_entry_id = entry.entry_id
             entries_created += 1
+
+    for doc_id, group in mortgage_groups.items():
+        doc = docs_by_id[doc_id]
+        try:
+            entry, lines = _build_mortgage_entry(doc, group, accounts_by_code)
+        except JournalError as exc:
+            logger.warning("Skipping mortgage doc %s: %s", doc_id, exc)
+            continue
+        db.add(entry)
+        for line in lines:
+            db.add(line)
+        for txn in group:
+            txn.status = "posted"
+            txn.journal_entry_id = entry.entry_id
+        entries_created += 1
 
     await db.commit()
     logger.info("Posted %d journal entries for period %s", entries_created, period_id)
@@ -278,6 +290,69 @@ def _build_statement_entry(
         JournalLine(entry_id=eid, account_code=debit_code, debit_amount=amount, credit_amount=_ZERO),
         JournalLine(entry_id=eid, account_code=credit_code, debit_amount=_ZERO, credit_amount=amount),
     ]
+    return entry, lines
+
+
+def _build_mortgage_entry(
+    doc: Document,
+    txns: list[RawTransaction],
+    accounts_by_code: dict[int, Account],
+) -> tuple[JournalEntry, list[JournalLine]]:
+    """Build one balanced entry per mortgage statement.
+
+    Each component transaction (principal, interest, escrow, taxes, insurance)
+    becomes a debit line against its suggested_account_code; the total is
+    credited to the document's source_account_code (checking).
+    """
+    if doc.source_account_code is None:
+        raise JournalError(f"Mortgage document {doc.document_id} has no source_account_code")
+    if doc.source_account_code not in accounts_by_code:
+        raise JournalError(f"Source account {doc.source_account_code} not found")
+    for txn in txns:
+        if txn.suggested_account_code is None:
+            raise JournalError(
+                f"Mortgage transaction {txn.raw_txn_id} ({txn.description!r}) "
+                "has no suggested_account_code"
+            )
+        if txn.suggested_account_code not in accounts_by_code:
+            raise JournalError(f"Account {txn.suggested_account_code} not found")
+
+    eid = uuid.uuid4()
+    entry = JournalEntry(
+        entry_id=eid,
+        period_id=txns[0].period_id,
+        entry_date=txns[0].txn_date,
+        description=f"Mortgage Payment — {doc.file_name}",
+        source_type="statement",
+        source_document_id=doc.document_id,
+        created_by="python",
+    )
+
+    lines: list[JournalLine] = []
+    total = _ZERO
+    for txn in txns:
+        amount = abs(txn.amount)
+        lines.append(JournalLine(
+            entry_id=eid,
+            account_code=txn.suggested_account_code,
+            debit_amount=amount,
+            credit_amount=_ZERO,
+            memo=txn.description,
+        ))
+        total += amount
+
+    if total <= _ZERO:
+        raise JournalError(
+            f"Mortgage document {doc.document_id} has no positive payment components"
+        )
+
+    lines.append(JournalLine(
+        entry_id=eid,
+        account_code=doc.source_account_code,
+        debit_amount=_ZERO,
+        credit_amount=total,
+    ))
+
     return entry, lines
 
 

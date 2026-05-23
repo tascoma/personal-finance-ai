@@ -11,12 +11,15 @@ from pathlib import Path
 from typing import Sequence
 
 from fastapi import UploadFile
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.document import Document
+from app.models.journal import JournalEntry, JournalLine
 from app.models.period import Period
+from app.models.raw_transaction import RawTransaction
+from app.models.review_queue import ReviewQueue
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +163,19 @@ async def delete_document(db: AsyncSession, document_id: uuid.UUID) -> None:
     if document is None:
         raise DocumentError("Document not found")
 
+    raw_txn_subq = select(RawTransaction.raw_txn_id).where(
+        RawTransaction.document_id == document_id
+    )
+    entry_subq = select(JournalEntry.entry_id).where(
+        JournalEntry.source_document_id == document_id
+    )
+
+    await db.execute(delete(ReviewQueue).where(ReviewQueue.raw_txn_id.in_(raw_txn_subq)))
+    await db.execute(delete(JournalLine).where(JournalLine.entry_id.in_(entry_subq)))
+    await db.execute(delete(JournalEntry).where(JournalEntry.source_document_id == document_id))
+    await db.execute(delete(RawTransaction).where(RawTransaction.document_id == document_id))
+    await db.execute(delete(Document).where(Document.document_id == document_id))
+
     Path(document.file_path).unlink(missing_ok=True)
-    await db.delete(document)
     await db.commit()
     logger.info("Deleted document %s", document_id)
