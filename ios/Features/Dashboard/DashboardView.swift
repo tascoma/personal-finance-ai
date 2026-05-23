@@ -4,7 +4,6 @@ struct DashboardView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var vm: DashboardViewModel
     @State private var selectedTab: Tab = .overview
-    @State private var isSigningOut = false
 
     enum Tab: String, CaseIterable, Identifiable {
         case overview = "Overview"
@@ -25,18 +24,7 @@ struct DashboardView: View {
                 .navigationTitle("Dashboard")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Menu {
-                            Button(role: .destructive) {
-                                Task { await signOut() }
-                            } label: {
-                                Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
-                            }
-                        } label: {
-                            Image(systemName: "person.crop.circle")
-                        }
-                        .disabled(isSigningOut)
-                    }
+                    ToolbarItem(placement: .topBarTrailing) { SignOutMenuButton() }
                 }
         }
         .task { await vm.load() }
@@ -103,12 +91,5 @@ struct DashboardView: View {
         .refreshable {
             await vm.refresh()
         }
-    }
-
-    private func signOut() async {
-        isSigningOut = true
-        defer { isSigningOut = false }
-        try? await env.api.perform(.logout)
-        env.auth.clear()
     }
 }

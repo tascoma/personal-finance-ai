@@ -32,6 +32,20 @@ struct Endpoint {
         return Endpoint(method: "GET", path: "/dashboard\(suffix)", requiresAuth: true)
     }
 
+    static let balanceSheet = Endpoint(
+        method: "GET", path: "/statements/balance-sheet", requiresAuth: true
+    )
+
+    static func incomeStatement(periodId: UUID? = nil) -> Endpoint {
+        let suffix = periodId.map { "?period_id=\($0.uuidString.lowercased())" } ?? ""
+        return Endpoint(method: "GET", path: "/statements/income\(suffix)", requiresAuth: true)
+    }
+
+    static func cashflowStatement(periodId: UUID? = nil) -> Endpoint {
+        let suffix = periodId.map { "?period_id=\($0.uuidString.lowercased())" } ?? ""
+        return Endpoint(method: "GET", path: "/statements/cashflow\(suffix)", requiresAuth: true)
+    }
+
     func urlRequest(baseURL: URL) -> URLRequest {
         let fullURL = URL(string: baseURL.absoluteString + path) ?? baseURL
         var req = URLRequest(url: fullURL)

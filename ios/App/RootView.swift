@@ -17,7 +17,7 @@ struct RootView: View {
                     .task { await bootstrap() }
             case .ready:
                 if env.auth.isAuthenticated {
-                    DashboardView(api: env.api)
+                    MainTabView()
                 } else {
                     LoginView(api: env.api, auth: env.auth)
                 }
