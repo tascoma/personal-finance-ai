@@ -213,6 +213,59 @@ async def test_post_paystub_balanced_entry(session_factory, open_period):
 
 
 @pytest.mark.asyncio
+async def test_post_mortgage_single_balanced_entry(session_factory, open_period):
+    """Mortgage statement: all components post as ONE balanced entry.
+
+    Expected lines for the May statement:
+      Debit  Mortgage Interest   1,722.97
+      Debit  Mortgage Payable      267.62
+      Debit  Escrow Account        316.97
+      Credit Checking             2,307.56
+    """
+    async with session_factory() as session:
+        session.add_all([
+            Account(account_code=210102, account_name="Mortgage Payable", account_type="Liability",
+                    sub_category="Long-term Debt", normal_balance="credit", is_memo=False, is_active=True),
+            Account(account_code=510101, account_name="Mortgage Interest", account_type="Expense",
+                    sub_category="Housing", normal_balance="debit", is_memo=False, is_active=True),
+            Account(account_code=100202, account_name="Escrow Account", account_type="Asset",
+                    sub_category="Cash", normal_balance="debit", is_memo=False, is_active=True),
+        ])
+        await session.commit()
+
+    doc = await _make_doc(session_factory, open_period.period_id,
+                          doc_type="mortgage_statement", source_code=100101)
+    # Parse stores components as negative outflows from checking.
+    await _make_txn(session_factory, doc, "Mortgage Principal", Decimal("-267.62"), 210102)
+    await _make_txn(session_factory, doc, "Mortgage Interest", Decimal("-1722.97"), 510101)
+    await _make_txn(session_factory, doc, "Escrow Deposit", Decimal("-316.97"), 100202)
+
+    async with session_factory() as session:
+        count = await journal_service.post_period(session, open_period.period_id)
+
+    assert count == 1  # one entry for the whole mortgage statement
+
+    async with session_factory() as session:
+        entries = (await session.scalars(select(JournalEntry))).all()
+        lines = (await session.scalars(select(JournalLine))).all()
+
+    assert len(entries) == 1
+    assert entries[0].source_type == "statement"
+    assert entries[0].source_document_id == doc.document_id
+    assert len(lines) == 4
+
+    by_account = {line.account_code: line for line in lines}
+    assert by_account[510101].debit_amount == Decimal("1722.97")  # Mortgage Interest
+    assert by_account[210102].debit_amount == Decimal("267.62")   # Mortgage Payable
+    assert by_account[100202].debit_amount == Decimal("316.97")   # Escrow
+    assert by_account[100101].credit_amount == Decimal("2307.56") # Checking
+
+    total_debits = sum(line.debit_amount for line in lines)
+    total_credits = sum(line.credit_amount for line in lines)
+    assert total_debits == total_credits == Decimal("2307.56")
+
+
+@pytest.mark.asyncio
 async def test_post_paystub_no_source_skipped(session_factory, open_period):
     """Paystub with no source_account_code is skipped — no entry created."""
     doc = await _make_doc(session_factory, open_period.period_id,
