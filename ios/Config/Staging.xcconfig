@@ -1,0 +1,6 @@
+#include "Base.xcconfig"
+
+API_BASE_URL = https:/$()/personal-finance-agent-1-tqet.onrender.com
+APNS_SANDBOX = YES
+
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = STAGING

@@ -1,0 +1,47 @@
+import Foundation
+
+struct Endpoint {
+    let method: String
+    let path: String
+    let body: Data?
+    let requiresAuth: Bool
+
+    private init(method: String, path: String, body: Data? = nil, requiresAuth: Bool) {
+        self.method = method
+        self.path = path
+        self.body = body
+        self.requiresAuth = requiresAuth
+    }
+
+    static func login(email: String, password: String) -> Endpoint {
+        struct Body: Encodable { let email: String; let password: String }
+        let body = try? JSONEncoder.api().encode(Body(email: email, password: password))
+        return Endpoint(method: "POST", path: "/auth/login", body: body, requiresAuth: false)
+    }
+
+    static let refresh = Endpoint(method: "POST", path: "/auth/refresh", requiresAuth: false)
+    static let logout = Endpoint(method: "POST", path: "/auth/logout", requiresAuth: false)
+    static let me = Endpoint(method: "GET", path: "/auth/me", requiresAuth: true)
+    static let periods = Endpoint(method: "GET", path: "/periods", requiresAuth: true)
+
+    static func dashboard(fromPeriodId: UUID? = nil, toPeriodId: UUID? = nil) -> Endpoint {
+        var query: [String] = []
+        if let from = fromPeriodId { query.append("from_period_id=\(from.uuidString.lowercased())") }
+        if let to = toPeriodId { query.append("to_period_id=\(to.uuidString.lowercased())") }
+        let suffix = query.isEmpty ? "" : "?\(query.joined(separator: "&"))"
+        return Endpoint(method: "GET", path: "/dashboard\(suffix)", requiresAuth: true)
+    }
+
+    func urlRequest(baseURL: URL) -> URLRequest {
+        let fullURL = URL(string: baseURL.absoluteString + path) ?? baseURL
+        var req = URLRequest(url: fullURL)
+        req.httpMethod = method
+        req.httpShouldHandleCookies = true
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body = body {
+            req.httpBody = body
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        return req
+    }
+}

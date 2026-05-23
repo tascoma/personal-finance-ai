@@ -1,0 +1,40 @@
+import Foundation
+import Observation
+
+@MainActor
+@Observable
+final class AppEnvironment {
+    let baseURL: URL
+    let session: URLSession
+    let auth: AuthStore
+    let refresher: TokenRefresher
+    let api: APIClient
+
+    init() {
+        self.baseURL = AppEnvironment.loadBaseURL()
+
+        let config = URLSessionConfiguration.default
+        config.httpShouldSetCookies = true
+        config.httpCookieAcceptPolicy = .always
+        config.httpCookieStorage = HTTPCookieStorage.shared
+        config.timeoutIntervalForRequest = 90
+        self.session = URLSession(configuration: config)
+
+        let auth = AuthStore()
+        let refresher = TokenRefresher()
+        self.auth = auth
+        self.refresher = refresher
+        self.api = APIClient(baseURL: baseURL, session: session, auth: auth, refresher: refresher)
+    }
+
+    private static func loadBaseURL() -> URL {
+        let raw = (Bundle.main.object(forInfoDictionaryKey: "API_BASE_URL") as? String) ?? ""
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        let fallback = "http://127.0.0.1:8000"
+        let source = trimmed.isEmpty ? fallback : (trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed)
+        guard let url = URL(string: source + "/api/v1"), url.scheme != nil, url.host != nil else {
+            fatalError("Invalid API_BASE_URL: '\(raw)' (resolved to '\(source)')")
+        }
+        return url
+    }
+}

@@ -1,0 +1,20 @@
+# XcodeGen-managed project — regenerate with `xcodegen` instead of committing
+PersonalFinanceAI.xcodeproj/
+PersonalFinanceAI.xcworkspace/
+
+# Generated Info.plist (re-emitted by XcodeGen from project.yml)
+App/Generated-Info.plist
+
+# Xcode build/derived data
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Packages/
+
+# macOS
+.DS_Store
