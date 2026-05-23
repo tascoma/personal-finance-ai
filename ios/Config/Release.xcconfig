@@ -1,0 +1,4 @@
+#include "Base.xcconfig"
+
+API_BASE_URL = https:/$()/personal-finance-agent-ipuu.onrender.com
+APNS_SANDBOX = NO

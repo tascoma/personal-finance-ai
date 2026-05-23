@@ -33,3 +33,24 @@ class UserRead(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class DeviceTokenRegister(BaseModel):
+    apns_token: str
+    bundle_id: str
+
+    @field_validator("apns_token")
+    @classmethod
+    def token_not_empty(cls, v: str) -> str:
+        if not v or len(v) < 16:
+            raise ValueError("apns_token looks invalid")
+        return v
+
+
+class DeviceTokenRead(BaseModel):
+    id: uuid.UUID
+    bundle_id: str
+    created_at: datetime
+    last_seen_at: datetime
+
+    model_config = {"from_attributes": True}
