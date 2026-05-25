@@ -1,6 +1,6 @@
 # Personal Finance Agent
 
-A personal double-entry accounting system with an AI-powered document and transaction intelligence backend. Upload bank statements, paystubs, and mortgage documents; let AI agents extract and classify transactions; then follow a structured monthly close workflow to maintain an accurate general ledger.
+A personal double-entry accounting system with an AI-powered document and transaction intelligence backend, a React web frontend, and a native SwiftUI iOS companion app. Upload bank statements, paystubs, and mortgage documents; let AI agents extract and classify transactions; then follow a structured monthly close workflow to maintain an accurate general ledger.
 
 ## Stack
 
@@ -17,6 +17,13 @@ A personal double-entry accounting system with an AI-powered document and transa
 ### Frontend
 - **React 18** + **TypeScript** — component-based SPA
 - **Vite** — dev server and build tool
+
+### iOS app
+- **SwiftUI** + **Swift Charts** — UI and dashboard visualisations
+- **WidgetKit** — Home Screen widget (net worth + monthly cash flow)
+- **LocalAuthentication** — Face ID / Touch ID app lock
+- **APNs** — push notifications for period status changes
+- **XcodeGen** — `ios/project.yml` is the source of truth; the `.xcodeproj` is generated. Min target iOS 17
 
 ## Platforms
 
@@ -44,6 +51,7 @@ External services this app depends on:
 - Automatic closing entries to zero income/expense accounts and roll equity
 - Financial statements: Balance Sheet, Income Statement, Cash Flow Statement
 - Dashboard with net worth trends, top expense categories, and a retirement savings rate KPI (retirement contributions ÷ salary + bonus)
+- Native iOS app: read-only Dashboard + Statements, Home Screen widget, Face ID lock, push notifications on period status changes
 - Per-request `x-request-id` correlation between client and server logs
 
 ## Getting started
@@ -110,7 +118,28 @@ npm run dev
 
 The UI is served at `http://localhost:5173` and proxies API requests to the backend.
 
-### 6. Run tests
+### 6. (Optional) Run the iOS app
+
+The iOS app lives under [`ios/`](ios/) and uses XcodeGen, so the `.xcodeproj` is generated rather than checked in:
+
+```bash
+brew install xcodegen
+cd ios
+xcodegen
+open PersonalFinanceAI.xcodeproj
+```
+
+Pick a scheme in Xcode to choose which backend to talk to:
+
+| Scheme  | Backend |
+| ------- | ------- |
+| Debug   | `http://127.0.0.1:8000` (run the backend locally) |
+| Staging | https://personal-finance-agent-1-tqet.onrender.com |
+| Release | https://personal-finance-agent-ipuu.onrender.com |
+
+See [`ios/README.md`](ios/README.md) for the auth/cookie flow, the `@DecimalString` property wrappers used to round-trip backend money, widget setup, and push notification configuration.
+
+### 7. Run tests
 
 Tests use an in-memory SQLite database and do not require a live PostgreSQL connection:
 
@@ -261,6 +290,15 @@ personal-finance-ai/
 │   │   └── utils/
 │   ├── index.html
 │   └── vite.config.ts
+├── ios/
+│   ├── project.yml              # XcodeGen spec — generates the .xcodeproj
+│   ├── App/                     # @main entry, root view, environment wiring
+│   ├── Config/                  # xcconfig per scheme (Debug/Staging/Release)
+│   ├── Core/                    # Networking, Auth, Models (Pydantic mirrors)
+│   ├── Features/                # Login, Dashboard, Statements, Settings
+│   ├── Widget/                  # WidgetKit Home Screen widget
+│   ├── Shared/                  # Code shared between app + widget
+│   └── README.md                # iOS-specific setup, auth model, conventions
 ├── .env                         # Local secrets (gitignored)
 ├── .env.example                 # Documents required env vars
 ├── pyproject.toml
