@@ -65,7 +65,7 @@ struct StatementSectionView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -101,6 +101,6 @@ struct StatementLinesBlock: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
     }
 }

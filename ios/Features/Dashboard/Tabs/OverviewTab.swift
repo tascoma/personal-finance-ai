@@ -14,22 +14,22 @@ struct OverviewTab: View {
             KPIGrid {
                 KPICard(label: "Total Income",
                         value: Money.format(data.totalIncome),
-                        valueColor: .green)
+                        valueColor: .appGreen)
                 KPICard(label: "Total Expenses",
                         value: Money.format(data.totalExpenses),
-                        valueColor: .red)
+                        valueColor: .appRed)
                 KPICard(label: "Net Income",
                         value: Money.format(data.netIncome),
-                        valueColor: data.netIncome >= 0 ? .green : .red)
+                        valueColor: data.netIncome >= 0 ? .appGreen : .appRed)
                 KPICard(label: "Total Assets",
                         value: Money.format(data.totalAssets),
-                        valueColor: .accentColor)
+                        valueColor: .appAccent)
                 KPICard(label: "Net Worth",
                         value: Money.format(data.netWorth),
-                        valueColor: data.netWorth >= 0 ? .accentColor : .red)
+                        valueColor: data.netWorth >= 0 ? .appAccent : .appRed)
                 KPICard(label: "Retirement Savings",
                         value: String(format: "%.1f%%", retirementPct),
-                        valueColor: retirementPct >= 0 ? .green : .red,
+                        valueColor: retirementPct >= 0 ? .appGreen : .appRed,
                         sub: "of salary + bonus")
             }
 

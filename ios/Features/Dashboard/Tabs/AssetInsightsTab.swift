@@ -15,9 +15,56 @@ struct AssetInsightsTab: View {
         111103: "HSA",
     ]
 
+    private static let growthExcluded: Set<String> = [
+        "Real Estate", "Cash & Cash Equivalents", "Restricted Cash"
+    ]
+
     private var totalAssetsDelta: Decimal { data.totalAssets - data.totalAssetsPrev }
     private var liquidDelta: Decimal { data.liquidAssets - data.liquidAssetsPrev }
     private var taxAdvDelta: Decimal { data.taxAdvantaged - data.taxAdvantagedPrev }
+
+    private var periodLabels: [String] {
+        var seen = Set<String>()
+        return data.assetSeries.compactMap { seen.insert($0.periodLabel).inserted ? $0.periodLabel : nil }
+    }
+
+    private var growthTotals: [Double] {
+        periodLabels.map { pl in
+            data.assetSeries
+                .filter { $0.periodLabel == pl && !Self.growthExcluded.contains($0.subCategory) }
+                .reduce(0.0) { $0 + $1.amount.asDouble }
+        }
+    }
+
+    private var periodGrowth: (pct: Double, delta: Double, prev: String, curr: String)? {
+        let labels = periodLabels
+        let totals = growthTotals
+        guard totals.count >= 2 else { return nil }
+        let last = totals[totals.count - 1]
+        let prev = totals[totals.count - 2]
+        guard prev != 0 else { return nil }
+        return ((last - prev) / prev * 100, last - prev, labels[labels.count - 2], labels[labels.count - 1])
+    }
+
+    private var ytdGrowth: (pct: Double, delta: Double, baseline: String, latest: String)? {
+        let labels = periodLabels
+        let totals = growthTotals
+        guard let latestLabel = labels.last else { return nil }
+        let latestYear = yearOf(latestLabel)
+        var baselineIdx = -1
+        for i in stride(from: labels.count - 1, through: 0, by: -1) {
+            if yearOf(labels[i]) < latestYear { baselineIdx = i; break }
+        }
+        guard baselineIdx >= 0 else { return nil }
+        let baseline = totals[baselineIdx]
+        guard baseline != 0 else { return nil }
+        let last = totals[totals.count - 1]
+        return ((last - baseline) / baseline * 100, last - baseline, labels[baselineIdx], latestLabel)
+    }
+
+    private func yearOf(_ label: String) -> Int {
+        Int(label.split(separator: " ").last.map(String.init) ?? "") ?? 0
+    }
 
     private var elapsedFraction: Double {
         guard let ytdYear = data.ytdYear else { return 1 }
@@ -37,27 +84,73 @@ struct AssetInsightsTab: View {
     var body: some View {
         VStack(spacing: 16) {
             KPIGrid {
-                KPICard(label: "Total Assets",
-                        value: Money.format(data.totalAssets),
-                        valueColor: .accentColor,
-                        sub: data.totalAssetsPrev != 0
-                            ? "\(Money.delta(totalAssetsDelta)) vs prior"
-                            : nil)
-                KPICard(label: "Liquid Assets",
-                        value: Money.format(data.liquidAssets),
-                        valueColor: .accentColor,
-                        sub: data.liquidAssetsPrev != 0
-                            ? "\(Money.delta(liquidDelta)) vs prior"
-                            : "cash + investments")
-                KPICard(label: "Tax Advantaged",
-                        value: Money.format(data.taxAdvantaged),
-                        valueColor: .accentColor,
-                        sub: data.taxAdvantagedPrev != 0
-                            ? "\(Money.delta(taxAdvDelta)) vs prior"
-                            : "retirement accts")
-                KPICard(label: "Total Liabilities",
-                        value: Money.format(data.totalLiabilities),
-                        valueColor: data.totalLiabilities > 0 ? .red : .secondary)
+                KPICard(
+                    label: "Total Assets",
+                    value: Money.format(data.totalAssets),
+                    valueColor: .appAccent,
+                    sub: data.totalAssetsPrev != 0
+                        ? "\(Money.delta(totalAssetsDelta)) vs prior period"
+                        : nil,
+                    subColor: data.totalAssetsPrev != 0
+                        ? (totalAssetsDelta >= 0 ? .appGreen : .appRed)
+                        : nil
+                )
+                KPICard(
+                    label: "Liquid Assets · inc. cash and investments",
+                    value: Money.format(data.liquidAssets),
+                    valueColor: .appAccent,
+                    sub: data.liquidAssetsPrev != 0
+                        ? "\(Money.delta(liquidDelta)) vs prior period"
+                        : nil,
+                    subColor: data.liquidAssetsPrev != 0
+                        ? (liquidDelta >= 0 ? .appGreen : .appRed)
+                        : nil
+                )
+                KPICard(
+                    label: "Tax Advantaged · inc. Roth IRA, 401k, HSA",
+                    value: Money.format(data.taxAdvantaged),
+                    valueColor: .appAccent,
+                    sub: data.taxAdvantagedPrev != 0
+                        ? "\(Money.delta(taxAdvDelta)) vs prior period"
+                        : "retirement accounts",
+                    subColor: data.taxAdvantagedPrev != 0
+                        ? (taxAdvDelta >= 0 ? .appGreen : .appRed)
+                        : nil
+                )
+                KPICard(
+                    label: "Period Growth · ex. house & cash",
+                    value: periodGrowth.map { g in
+                        "\(g.pct >= 0 ? "+" : "")\(String(format: "%.1f", g.pct))%"
+                    } ?? "—",
+                    valueColor: periodGrowth.map { $0.pct >= 0 ? Color.appGreen : Color.appRed } ?? .secondary,
+                    sub: periodGrowth.map { g in
+                        "\(Money.delta(Decimal(g.delta))) · \(g.prev) → \(g.curr)"
+                    } ?? "needs 2 periods",
+                    subColor: periodGrowth.map { $0.pct >= 0 ? Color.appGreen : Color.appRed }
+                )
+                KPICard(
+                    label: "YTD Growth · ex. house & cash",
+                    value: ytdGrowth.map { g in
+                        "\(g.pct >= 0 ? "+" : "")\(String(format: "%.1f", g.pct))%"
+                    } ?? "—",
+                    valueColor: ytdGrowth.map { $0.pct >= 0 ? Color.appGreen : Color.appRed } ?? .secondary,
+                    sub: ytdGrowth.map { g in
+                        "\(Money.delta(Decimal(g.delta))) · \(g.baseline) → \(g.latest)"
+                    } ?? "needs prior year",
+                    subColor: ytdGrowth.map { $0.pct >= 0 ? Color.appGreen : Color.appRed }
+                )
+            }
+
+            if !data.assetSeries.isEmpty {
+                DashboardCard("Asset Growth", subtitle: "total assets per closed period") {
+                    AssetGrowthChart(series: data.assetSeries)
+                }
+            }
+
+            if !data.assetComposition.isEmpty {
+                DashboardCard("Asset Mix", subtitle: "current snapshot") {
+                    AssetMixDonut(composition: data.assetComposition)
+                }
             }
 
             if !data.ytdRetirementContributions.isEmpty {
@@ -87,9 +180,9 @@ struct AssetInsightsTab: View {
             ? (contributed.asDouble / limit.asDouble) / max(elapsedFraction, 0.001)
             : 1
         let fillColor: Color = {
-            if contributed >= limit || pace >= 0.95 { return .green }
-            if pace >= 0.7 { return .orange }
-            return .red
+            if contributed >= limit || pace >= 0.95 { return .appGreen }
+            if pace >= 0.7 { return .appAmber }
+            return .appRed
         }()
         let label = Self.shortName[c.accountCode] ?? c.accountName
 
@@ -107,7 +200,7 @@ struct AssetInsightsTab: View {
 
             GeometryReader { geom in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 5).fill(Color.gray.opacity(0.18))
+                    RoundedRectangle(cornerRadius: 5).fill(Color.appSurface)
                     RoundedRectangle(cornerRadius: 5)
                         .fill(fillColor)
                         .frame(width: geom.size.width * pct / 100)

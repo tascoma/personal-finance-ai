@@ -20,7 +20,7 @@ struct CashflowStatementView: View {
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+                .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
 
                 if !response.noncashAdjustments.isEmpty {
                     StatementLinesBlock(
@@ -45,7 +45,7 @@ struct CashflowStatementView: View {
                     Spacer()
                     Text(Money.format(response.operatingTotal))
                         .font(.subheadline.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(response.operatingTotal >= 0 ? .green : .red)
+                        .foregroundStyle(response.operatingTotal >= 0 ? Color.appGreen : Color.appRed)
                 }
                 .padding(.horizontal, 4)
             }
@@ -60,13 +60,13 @@ struct CashflowStatementView: View {
     private var summaryCard: some View {
         VStack(spacing: 6) {
             summaryRow("Beginning cash", response.beginningCash)
-            summaryRow("Net change", response.netChangeInCash, color: response.netChangeInCash >= 0 ? .green : .red)
+            summaryRow("Net change", response.netChangeInCash, color: response.netChangeInCash >= 0 ? .appGreen : .appRed)
             Divider()
-            summaryRow("Ending cash", response.endingCash, color: .accentColor, bold: true)
+            summaryRow("Ending cash", response.endingCash, color: .appAccent, bold: true)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func summaryRow(_ label: String, _ value: Decimal, color: Color = .primary, bold: Bool = false) -> some View {
@@ -89,7 +89,7 @@ struct CashflowStatementView: View {
                 lines: lines,
                 totalLabel: "Net \(title.lowercased().replacingOccurrences(of: " activities", with: ""))",
                 total: total,
-                totalColor: total >= 0 ? .green : .red
+                totalColor: total >= 0 ? .appGreen : .appRed
             )
         }
     }
@@ -110,6 +110,6 @@ struct CashflowStatementView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
     }
 }

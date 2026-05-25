@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Practice project for building a full-stack web app with a FastAPI backend and React frontend, backed by an AI agent pipeline.
+Practice project for building a full-stack app with a FastAPI backend, a React web frontend, and a native SwiftUI iOS app — all backed by an AI agent pipeline.
 
 ## Behavior
 
@@ -39,6 +39,16 @@ Practice project for building a full-stack web app with a FastAPI backend and Re
 - **TypeScript** — typed frontend code
 - **Vite** — dev server and build tool
 - **Node / npm** — frontend dependency management
+
+### iOS app (`ios/`)
+- **SwiftUI** + **WidgetKit** — UI and Home Screen widget
+- **Swift Charts** — dashboard visualisations (no third-party chart libs)
+- **URLSession** — networking; no SPM runtime dependencies
+- **LocalAuthentication** — Face ID / Touch ID app lock
+- **APNs** — push notifications for period status changes
+- **XcodeGen** — `project.yml` is the source of truth; `.xcodeproj` is generated and gitignored
+
+Min iOS target: **17.0**. Schemes select the backend per build: `Debug` → local, `Staging` → Render staging, `Release` → Render prod. See [`ios/README.md`](ios/README.md) for full setup, the auth/cookie model, and the `@DecimalString` property wrappers used to round-trip the backend's string-encoded `Decimal`s.
 
 ## Platforms
 
@@ -112,6 +122,17 @@ personal-finance-ai/
 │   ├── index.html
 │   ├── package.json
 │   └── vite.config.ts
+├── ios/
+│   ├── project.yml              # XcodeGen spec — generates the .xcodeproj
+│   ├── App/                     # @main entry, root view, environment wiring
+│   ├── Config/                  # xcconfig per scheme (Debug/Staging/Release)
+│   ├── Core/
+│   │   ├── Networking/          # APIClient, TokenRefresher actor, Decimal coding
+│   │   ├── Auth/                # AuthStore, BiometricController, PushNotifications
+│   │   └── Models/              # Swift mirrors of backend Pydantic schemas
+│   ├── Features/                # Login, Dashboard, Statements, Settings
+│   ├── Widget/                  # WidgetKit Home Screen widget
+│   └── Shared/                  # Code shared between app + widget (SharedContainer, Money)
 ├── .env                         # Local secrets (gitignored)
 ├── .env.example                 # Documents required env vars
 ├── pyproject.toml               # Python project config and pytest settings
@@ -137,6 +158,34 @@ npm run dev
 
 Backend: `http://127.0.0.1:8000` · Frontend dev server: `http://localhost:5173`
 
+### Building and installing the iOS app to a physical device
+
+The login keychain on this Mac has a broken password history (result of a macOS migration). A separate signing keychain at `~/Library/Keychains/xcodesign.keychain-db` (password: `build`) was created to work around this. **Always unlock it before running xcodebuild**, otherwise codesign fails with `errSecInternalComponent`:
+
+```bash
+security unlock-keychain -p "build" ~/Library/Keychains/xcodesign.keychain-db
+```
+
+Then build and install (use `Staging` config to hit the Render staging backend; `Debug` points at localhost which the phone can't reach):
+
+```bash
+cd ios
+xcodebuild \
+  -project PersonalFinanceAI.xcodeproj \
+  -scheme PersonalFinanceAI \
+  -configuration Staging \
+  -destination 'id=00008130-000848C6012B803A' \
+  -allowProvisioningUpdates \
+  -allowProvisioningDeviceRegistration \
+  build
+
+xcrun devicectl device install app \
+  --device 00008130-000848C6012B803A \
+  ~/Library/Developer/Xcode/DerivedData/PersonalFinanceAI-*/Build/Products/Staging-iphoneos/PersonalFinanceAI.app
+```
+
+Tony's iPhone UDID: `00008130-000848C6012B803A`. If the signing cert ever goes missing (e.g. after a keychain wipe), re-run with `-allowProvisioningUpdates -allowProvisioningDeviceRegistration` and it will create a fresh one in the `xcodesign` keychain.
+
 ## Conventions
 
 - `models/` holds SQLAlchemy classes; `schemas/` holds Pydantic classes — keep them separate.
@@ -151,3 +200,6 @@ Backend: `http://127.0.0.1:8000` · Frontend dev server: `http://localhost:5173`
 - **Authentication.** JWT-based auth with short-lived access tokens (Bearer) and long-lived refresh tokens (HttpOnly cookie, scoped to `/api/v1/auth`). Use the `get_current_user` dependency from `app.dependencies` to protect any route. The `services/auth.py` layer handles hashing, JWT creation/decoding, and DB lookups; the route layer only maps `AuthError` → HTTP status codes. The `SECRET_KEY` env var must be set to a non-default value in production.
 - **Agents.** Each agent module under `app/agents/` defines only its prompt and output Pydantic model, then calls `build_agent` / `run_agent` from `_base.py`. Failures inside `run_agent` are wrapped as `AgentError` — route handlers catch `AgentError` (not bare `Exception`) and return a generic 502 so internal exception strings never leak to clients.
 - **Request IDs and logging.** `RequestIdMiddleware` reads the `x-request-id` header (or mints one) per request, stores it in a `ContextVar`, and echoes it back in the response. The log format is `%(asctime)s %(levelname)s [%(request_id)s] %(name)s %(message)s`, so any log line emitted during a request is correlatable with the client's request id.
+- **iOS project file generation.** Don't edit `ios/PersonalFinanceAI.xcodeproj` directly — it's gitignored and regenerated by XcodeGen. Source files are picked up by directory globs in `ios/project.yml`; after adding a file under `App/`, `Core/`, `Features/`, `Shared/`, or `Widget/`, rerun `xcodegen` from `ios/` to refresh the project.
+- **Money on iOS.** The backend serialises `Decimal` as JSON **strings** (to avoid float drift). Swift models use the `@DecimalString` / `@OptionalDecimalString` property wrappers in `ios/Core/Networking/JSONCoding.swift`. Convert to `Double` only at the chart boundary — never store doubles in models.
+- **Posting rules — paystub & mortgage docs.** Both `paystub` and `mortgage_statement` documents post as a *single balanced JournalEntry per document* (debit each component line, credit the source account for the total). Other statement types (`bank_statement`, `credit_card`, `investment`) post one 2-line entry per transaction. The grouping happens in `journal.post_period`; add new "compound" doc types there.

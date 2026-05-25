@@ -34,9 +34,9 @@ struct NetWorthForecastChart: View {
             }
         }
         .chartForegroundStyleScale([
-            Forecast.Series.historical.rawValue: Color.accentColor,
-            Forecast.Series.trailing.rawValue: forecast.avgMonthlyNet >= 0 ? Color.green : Color.red,
-            Forecast.Series.regression.rawValue: Color.gray,
+            Forecast.Series.historical.rawValue: Color.appAccent,
+            Forecast.Series.trailing.rawValue: forecast.avgMonthlyNet >= 0 ? Color.appGreen : Color.appRed,
+            Forecast.Series.regression.rawValue: Color.appTextTertiary,
         ])
         .chartXAxis {
             AxisMarks(values: visibleLabels) { value in

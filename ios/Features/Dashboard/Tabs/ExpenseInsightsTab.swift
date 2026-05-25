@@ -10,9 +10,9 @@ struct ExpenseInsightsTab: View {
     }
 
     private var lifestyleColor: Color {
-        if lifestylePct > 30 { return .red }
-        if lifestylePct > 20 { return .orange }
-        return .green
+        if lifestylePct > 30 { return .appRed }
+        if lifestylePct > 20 { return .appAmber }
+        return .appGreen
     }
 
     private var avgExpPerPeriod: Decimal {
@@ -27,9 +27,9 @@ struct ExpenseInsightsTab: View {
     }
 
     private var expIncomeColor: Color {
-        if expToIncomePct > 100 { return .red }
-        if expToIncomePct > 80 { return .orange }
-        return .green
+        if expToIncomePct > 100 { return .appRed }
+        if expToIncomePct > 80 { return .appAmber }
+        return .appGreen
     }
 
     private var periodDeltaPct: Double? {
@@ -49,10 +49,10 @@ struct ExpenseInsightsTab: View {
                         sub: "of salary + bonus")
                 KPICard(label: "Lifestyle Spend",
                         value: Money.format(data.lifestyleExpenses),
-                        valueColor: .red)
+                        valueColor: .appRed)
                 KPICard(label: "Avg / Period",
                         value: Money.format(avgExpPerPeriod),
-                        valueColor: .red,
+                        valueColor: .appRed,
                         sub: "\(data.periodCount) periods")
                 KPICard(label: "Expense / Income",
                         value: String(format: "%.1f%%", expToIncomePct),
@@ -64,13 +64,13 @@ struct ExpenseInsightsTab: View {
                         : 0
                     KPICard(label: "Top Category",
                             value: top.category,
-                            valueColor: .accentColor,
+                            valueColor: .appAccent,
                             sub: String(format: "%.0f%% of expenses", pct))
                 }
                 if let delta = periodDeltaPct {
                     KPICard(label: "Δ vs Prior",
                             value: String(format: "%@%.1f%%", delta >= 0 ? "+" : "", delta),
-                            valueColor: delta > 0 ? .red : .green,
+                            valueColor: delta > 0 ? .appRed : .appGreen,
                             sub: "period over period")
                 }
             }

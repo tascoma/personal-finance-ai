@@ -4,6 +4,7 @@ import SwiftUI
 struct PersonalFinanceAIApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var env: AppEnvironment
+    @AppStorage("isDarkMode") private var isDarkMode: Bool = true
 
     init() {
         let env = AppEnvironment()
@@ -17,6 +18,8 @@ struct PersonalFinanceAIApp: App {
         WindowGroup {
             RootView()
                 .environment(env)
+                .preferredColorScheme(isDarkMode ? .dark : .light)
+                .tint(Color.appAccent)
                 .onAppear {
                     appDelegate.pushController = env.push
                 }

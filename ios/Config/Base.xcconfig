@@ -7,9 +7,11 @@ IPHONEOS_DEPLOYMENT_TARGET = 17.0
 SWIFT_VERSION = 5.9
 ENABLE_BITCODE = NO
 
+DISPLAY_NAME = Personal Finance
+
 MARKETING_VERSION = 0.1.0
 CURRENT_PROJECT_VERSION = 1
 
 // Developer team is per-machine; override locally via an untracked
 // Config/Local.xcconfig included from Debug.xcconfig if needed.
-DEVELOPMENT_TEAM =
+DEVELOPMENT_TEAM = 286VX7XR6R
