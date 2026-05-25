@@ -47,6 +47,16 @@ enum KeychainBridge {
         return data
     }
 
+    static func setString(_ value: String, forKey key: String) {
+        guard let data = value.data(using: .utf8) else { return }
+        setData(data, forKey: key)
+    }
+
+    static func string(forKey key: String) -> String? {
+        guard let data = data(forKey: key) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
     static func delete(forKey key: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

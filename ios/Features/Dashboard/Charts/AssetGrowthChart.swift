@@ -1,11 +1,27 @@
 import SwiftUI
 import Charts
 
-struct NetWorthTrendChart: View {
-    let series: [NetWorthPoint]
+struct AssetGrowthChart: View {
+    let series: [AssetSeriesPoint]
+
+    private struct PeriodTotal: Identifiable {
+        let id: String
+        let periodLabel: String
+        let total: Double
+    }
+
+    private var periodTotals: [PeriodTotal] {
+        var seen = [String: Double]()
+        var order = [String]()
+        for point in series {
+            if seen[point.periodLabel] == nil { order.append(point.periodLabel) }
+            seen[point.periodLabel, default: 0] += point.amount.asDouble
+        }
+        return order.map { PeriodTotal(id: $0, periodLabel: $0, total: seen[$0] ?? 0) }
+    }
 
     private var yBounds: (min: Double, max: Double, bottom: Double) {
-        let values = series.map { $0.netWorth.asDouble }
+        let values = periodTotals.map(\.total)
         guard let minVal = values.min(), let maxVal = values.max(), minVal != maxVal else {
             return (0, 1, 0)
         }
@@ -20,12 +36,13 @@ struct NetWorthTrendChart: View {
     }
 
     var body: some View {
+        let totals = periodTotals
         Chart {
-            ForEach(series) { point in
+            ForEach(totals) { point in
                 AreaMark(
                     x: .value("Period", point.periodLabel),
                     yStart: .value("Base", yBounds.bottom),
-                    yEnd: .value("Net Worth", point.netWorth.asDouble)
+                    yEnd: .value("Total Assets", point.total)
                 )
                 .interpolationMethod(.catmullRom)
                 .foregroundStyle(
@@ -40,7 +57,7 @@ struct NetWorthTrendChart: View {
 
                 LineMark(
                     x: .value("Period", point.periodLabel),
-                    y: .value("Net Worth", point.netWorth.asDouble)
+                    y: .value("Total Assets", point.total)
                 )
                 .interpolationMethod(.catmullRom)
                 .foregroundStyle(Color.appAccent)
@@ -48,7 +65,7 @@ struct NetWorthTrendChart: View {
 
                 PointMark(
                     x: .value("Period", point.periodLabel),
-                    y: .value("Net Worth", point.netWorth.asDouble)
+                    y: .value("Total Assets", point.total)
                 )
                 .foregroundStyle(Color.appAccent)
                 .symbolSize(40)

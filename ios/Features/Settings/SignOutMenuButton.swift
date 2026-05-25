@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SignOutMenuButton: View {
     @Environment(AppEnvironment.self) private var env
+    @AppStorage("isDarkMode") private var isDarkMode: Bool = true
     @State private var isSigningOut = false
 
     private var biometricType: BiometricController.BiometryType { env.biometric.availableType }
@@ -28,6 +29,15 @@ struct SignOutMenuButton: View {
                         systemImage: biometricType.systemImage
                     )
                 }
+            }
+
+            Button {
+                isDarkMode.toggle()
+            } label: {
+                Label(
+                    isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode",
+                    systemImage: isDarkMode ? "sun.max" : "moon"
+                )
             }
 
             if !pushIsRegistered {
@@ -62,6 +72,7 @@ struct SignOutMenuButton: View {
         // APNs 410 responses.
         await env.push.deregisterCurrentToken()
         try? await env.api.perform(.logout)
+        LoginViewModel.clearSavedCredentials()
         // Disable biometric on sign-out so the next user must opt in explicitly.
         env.biometric.disable()
         env.auth.clear()

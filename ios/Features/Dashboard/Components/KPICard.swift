@@ -5,12 +5,14 @@ struct KPICard: View {
     let value: String
     let valueColor: Color
     let sub: String?
+    let subColor: Color?
 
-    init(label: String, value: String, valueColor: Color = .primary, sub: String? = nil) {
+    init(label: String, value: String, valueColor: Color = .primary, sub: String? = nil, subColor: Color? = nil) {
         self.label = label
         self.value = value
         self.valueColor = valueColor
         self.sub = sub
+        self.subColor = subColor
     }
 
     var body: some View {
@@ -27,13 +29,13 @@ struct KPICard: View {
             if let sub = sub {
                 Text(sub)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(subColor ?? .secondary)
                     .lineLimit(1)
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+        .frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
+        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -80,6 +82,6 @@ struct DashboardCard<Content: View>: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 12))
     }
 }

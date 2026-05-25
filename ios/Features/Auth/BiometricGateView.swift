@@ -48,7 +48,7 @@ struct BiometricGateView: View {
             .padding(.bottom, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
+        .background(Color.appBackground)
         .task {
             // Auto-prompt on appear; user can re-trigger with the button if they cancel.
             let ok = await biometric.unlock()
