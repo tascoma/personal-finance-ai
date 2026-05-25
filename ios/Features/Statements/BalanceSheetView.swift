@@ -21,9 +21,9 @@ struct BalanceSheetView: View {
         VStack(spacing: 16) {
             balanceCard
 
-            sectionStack(title: "Assets", sections: response.assets, totalLabel: "Total assets", total: totalAssets, totalColor: .accentColor)
-            sectionStack(title: "Liabilities", sections: response.liabilities, totalLabel: "Total liabilities", total: totalLiabilities, totalColor: .red)
-            sectionStack(title: "Equity", sections: response.equity, totalLabel: "Total equity", total: totalEquity, totalColor: .green)
+            sectionStack(title: "Assets", sections: response.assets, totalLabel: "Total assets", total: totalAssets, totalColor: .appAccent)
+            sectionStack(title: "Liabilities", sections: response.liabilities, totalLabel: "Total liabilities", total: totalLiabilities, totalColor: .appRed)
+            sectionStack(title: "Equity", sections: response.equity, totalLabel: "Total equity", total: totalEquity, totalColor: .appGreen)
 
             if !response.offBalanceSheet.isEmpty {
                 sectionStack(title: "Off Balance Sheet", sections: response.offBalanceSheet, totalLabel: "Total off-balance-sheet", total: totalOffBs, totalColor: .secondary)
@@ -33,14 +33,14 @@ struct BalanceSheetView: View {
 
     private var balanceCard: some View {
         VStack(spacing: 6) {
-            balanceRow("Total Assets", totalAssets, color: .accentColor)
+            balanceRow("Total Assets", totalAssets, color: .appAccent)
             balanceRow("Total Liabilities + Equity", totalLiabAndEquity, color: .primary)
             let diff = totalAssets - totalLiabAndEquity
-            balanceRow("Imbalance", diff, color: diff == 0 ? .green : .red)
+            balanceRow("Imbalance", diff, color: diff == 0 ? .appGreen : .appRed)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func balanceRow(_ label: String, _ value: Decimal, color: Color) -> some View {
@@ -84,7 +84,7 @@ struct BalanceSheetView: View {
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+                .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
             }
 
             HStack {

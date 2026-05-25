@@ -8,11 +8,11 @@ struct IncomeStatementView: View {
             summaryCard
 
             if !response.income.isEmpty {
-                grouping(title: "Income", sections: response.income, total: response.totalIncome, totalColor: .green)
+                grouping(title: "Income", sections: response.income, total: response.totalIncome, totalColor: .appGreen)
             }
 
             if !response.expenses.isEmpty {
-                grouping(title: "Expenses", sections: response.expenses, total: response.totalExpenses, totalColor: .red)
+                grouping(title: "Expenses", sections: response.expenses, total: response.totalExpenses, totalColor: .appRed)
             }
 
             if !response.otherComprehensiveIncome.isEmpty {
@@ -23,18 +23,18 @@ struct IncomeStatementView: View {
 
     private var summaryCard: some View {
         VStack(spacing: 6) {
-            summaryRow("Total Income", response.totalIncome, color: .green)
-            summaryRow("Total Expenses", response.totalExpenses, color: .red)
+            summaryRow("Total Income", response.totalIncome, color: .appGreen)
+            summaryRow("Total Expenses", response.totalExpenses, color: .appRed)
             Divider()
-            summaryRow("Net Income", response.netIncome, color: response.netIncome >= 0 ? .green : .red, bold: true)
+            summaryRow("Net Income", response.netIncome, color: response.netIncome >= 0 ? .appGreen : .appRed, bold: true)
             if response.totalOci != 0 || response.comprehensiveIncome != response.netIncome {
                 summaryRow("Other Comprehensive Inc.", response.totalOci, color: .secondary)
-                summaryRow("Comprehensive Income", response.comprehensiveIncome, color: response.comprehensiveIncome >= 0 ? .green : .red, bold: true)
+                summaryRow("Comprehensive Income", response.comprehensiveIncome, color: response.comprehensiveIncome >= 0 ? .appGreen : .appRed, bold: true)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func summaryRow(_ label: String, _ value: Decimal, color: Color, bold: Bool = false) -> some View {

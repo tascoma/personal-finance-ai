@@ -17,13 +17,13 @@ struct ForecastTab: View {
             if let f = forecast {
                 let gain = f.trailingEoy - f.currentNetWorth
                 let gainPct = f.currentNetWorth != 0 ? gain / f.currentNetWorth * 100 : 0
-                let gainColor: Color = gain >= 0 ? .green : .red
-                let netColor: Color = f.avgMonthlyNet >= 0 ? .green : .red
+                let gainColor: Color = gain >= 0 ? .appGreen : .appRed
+                let netColor: Color = f.avgMonthlyNet >= 0 ? .appGreen : .appRed
 
                 KPIGrid {
                     KPICard(label: "Current Net Worth",
                             value: Money.format(Decimal(f.currentNetWorth)),
-                            valueColor: .accentColor,
+                            valueColor: .appAccent,
                             sub: "latest closed period")
                     KPICard(label: "Projected EOY",
                             value: Money.format(Decimal(f.trailingEoy)),

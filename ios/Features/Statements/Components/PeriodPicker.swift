@@ -29,7 +29,7 @@ struct PeriodPicker: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+            .background(Color.appCard, in: Capsule())
         }
         .disabled(periods.isEmpty)
     }
