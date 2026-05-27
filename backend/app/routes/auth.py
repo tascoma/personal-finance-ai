@@ -73,7 +73,7 @@ async def login(
     except AuthError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
+            detail="Invalid credentials",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
@@ -97,8 +97,9 @@ async def refresh(
     try:
         user_id, token_version = decode_refresh_token(refresh_token)
     except ValueError as exc:
+        # Don't echo the jose/decoder internals back to the client.
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired session"
         ) from exc
 
     user = await get_user_by_id(db, user_id)

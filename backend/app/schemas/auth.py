@@ -4,21 +4,40 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr, field_validator
 
 
+# bcrypt only consumes the first 72 bytes of a password and raises on longer
+# input, so bound the password here rather than letting it 500 at the hash call.
+_BCRYPT_MAX_BYTES = 72
+
+
+def _validate_password_bounds(v: str) -> str:
+    if len(v) < 8:
+        raise ValueError("Password must be at least 8 characters")
+    if len(v.encode()) > _BCRYPT_MAX_BYTES:
+        raise ValueError("Password must be at most 72 bytes")
+    return v
+
+
 class UserRegister(BaseModel):
     email: EmailStr
     password: str
 
     @field_validator("password")
     @classmethod
-    def password_min_length(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-        return v
+    def password_bounds(cls, v: str) -> str:
+        return _validate_password_bounds(v)
 
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def password_max_bytes(cls, v: str) -> str:
+        # Bound login input too so an over-long password can't error inside bcrypt.
+        if len(v.encode()) > _BCRYPT_MAX_BYTES:
+            raise ValueError("Password must be at most 72 bytes")
+        return v
 
 
 class UserRead(BaseModel):

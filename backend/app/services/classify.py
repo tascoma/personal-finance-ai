@@ -88,6 +88,10 @@ async def classify_period(
             len(batch),
             period_id,
         )
+        # txn descriptions are untrusted (lifted verbatim from uploaded statements),
+        # so they can carry prompt-injection text. The blast radius is bounded: the
+        # agent returns a structured ClassifierOutput and any account_code it picks is
+        # validated against valid_codes below — an out-of-range code is flagged, not posted.
         user_prompt = (
             f"Chart of accounts:\n{coa_table}\n\n"
             f"Transactions to classify:\n{_format_txn_inputs(batch)}"
