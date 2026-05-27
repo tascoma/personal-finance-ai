@@ -59,7 +59,10 @@ async def save_upload(
     if document_type not in ALLOWED_DOCUMENT_TYPES:
         raise DocumentError(f"Invalid document_type: {document_type}")
 
-    file_name = upload.filename or ""
+    # Reduce the client-supplied filename to a bare basename before using it for
+    # any filesystem path — an untrusted multipart filename like "../../foo.pdf"
+    # would otherwise escape the period directory on both write and later unlink.
+    file_name = Path(upload.filename or "").name
     extension = Path(file_name).suffix.lower()
     if extension not in ALLOWED_EXTENSIONS:
         raise DocumentError(
@@ -75,6 +78,9 @@ async def save_upload(
     directory = UPLOAD_ROOT / str(period_id)
     directory.mkdir(parents=True, exist_ok=True)
     destination = _unique_destination(directory, file_name)
+    # Defence in depth: never let a destination resolve outside the period dir.
+    if not destination.resolve().is_relative_to(directory.resolve()):
+        raise DocumentError("Invalid file name")
 
     contents = await upload.read()
     max_bytes = settings.max_upload_size_mb * 1024 * 1024

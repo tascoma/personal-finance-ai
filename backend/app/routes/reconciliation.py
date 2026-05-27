@@ -167,6 +167,10 @@ async def analyze_reconciliation(
 
     analysis: ReconciliationAnalysis | None = None
     if gaps:
+        # recent_entry_descriptions are user-supplied JE text and can carry
+        # prompt-injection content. The agent's output is advisory only — a
+        # structured ReconciliationAnalysis shown to the operator, never used to
+        # post journal entries — so the blast radius is limited to bad advice.
         try:
             analysis = await run_reconciliation_agent(gaps)
         except AgentError as exc:

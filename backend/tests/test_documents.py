@@ -172,6 +172,31 @@ async def test_upload_duplicate_filename_gets_suffix(
 
 
 @pytest.mark.asyncio
+async def test_upload_filename_with_path_traversal_is_contained(
+    client: AsyncClient, session_factory, open_period
+):
+    """A crafted filename must not escape the period's upload directory, and the
+    stored file_name must be reduced to a bare basename."""
+    files = {"file": ("../../../evil.pdf", BytesIO(b"%PDF"), "application/pdf")}
+    data = {"document_type": "bank_statement"}
+    response = await client.post(
+        f"/api/v1/periods/{open_period.period_id}/documents",
+        data=data,
+        files=files,
+    )
+    assert response.status_code == 201
+    assert response.json()["file_name"] == "evil.pdf"
+
+    period_dir = (document_service.UPLOAD_ROOT / str(open_period.period_id)).resolve()
+    async with session_factory() as session:
+        doc = await session.scalar(select(Document))
+    assert doc is not None
+    stored = Path(doc.file_path).resolve()
+    assert stored.is_relative_to(period_dir)
+    assert stored.exists()
+
+
+@pytest.mark.asyncio
 async def test_upload_blocked_when_period_not_open(
     client: AsyncClient, session_factory, open_period
 ):

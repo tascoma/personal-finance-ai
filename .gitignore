@@ -30,3 +30,6 @@ frontend/dist/
 frontend/.vite/
 dist/
 .vite/
+
+# macOS
+.DS_Store
