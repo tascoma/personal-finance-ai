@@ -114,6 +114,39 @@ async def test_login_bad_password_returns_401(client: AsyncClient):
     assert resp.status_code == 401
 
 
+@pytest.mark.asyncio
+async def test_login_unknown_and_wrong_password_are_indistinguishable(client: AsyncClient):
+    """No account enumeration: an unknown email and a wrong password return the
+    same status and the same generic message."""
+    await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+
+    unknown = await client.post(
+        "/api/v1/auth/login", json={"email": "nobody@example.com", "password": "securepassword"}
+    )
+    wrong = await client.post(
+        "/api/v1/auth/login", json={**LOGIN_PAYLOAD, "password": "wrongpass"}
+    )
+    assert unknown.status_code == wrong.status_code == 401
+    assert unknown.json()["detail"] == wrong.json()["detail"] == "Invalid credentials"
+
+
+@pytest.mark.asyncio
+async def test_register_overlong_password_returns_422(client: AsyncClient):
+    """Passwords beyond bcrypt's 72-byte limit are rejected at the schema, not 500."""
+    resp = await client.post(
+        "/api/v1/auth/register", json={"email": "a@b.com", "password": "p" * 73}
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_security_headers_present(client: AsyncClient):
+    resp = await client.get("/health")
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
+    assert resp.headers["X-Frame-Options"] == "DENY"
+    assert resp.headers["Referrer-Policy"] == "no-referrer"
+
+
 # ── Refresh ───────────────────────────────────────────────────────────────────
 
 

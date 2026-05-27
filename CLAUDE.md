@@ -160,10 +160,12 @@ Backend: `http://127.0.0.1:8000` · Frontend dev server: `http://localhost:5173`
 
 ### Building and installing the iOS app to a physical device
 
-The login keychain on this Mac has a broken password history (result of a macOS migration). A separate signing keychain at `~/Library/Keychains/xcodesign.keychain-db` (password: `build`) was created to work around this. **Always unlock it before running xcodebuild**, otherwise codesign fails with `errSecInternalComponent`:
+The login keychain on this Mac has a broken password history (result of a macOS migration). A separate signing keychain at `~/Library/Keychains/xcodesign.keychain-db` (password: `build`) was created to work around this. **Always unlock it and add it to the search list before running xcodebuild**, otherwise codesign fails with `errSecInternalComponent`. **Always remove it from the search list when done.**
 
 ```bash
+# Before building
 security unlock-keychain -p "build" ~/Library/Keychains/xcodesign.keychain-db
+security list-keychains -s ~/Library/Keychains/xcodesign.keychain-db ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain
 ```
 
 Then build and install (use `Staging` config to hit the Render staging backend; `Debug` points at localhost which the phone can't reach):
@@ -177,11 +179,15 @@ xcodebuild \
   -destination 'id=00008130-000848C6012B803A' \
   -allowProvisioningUpdates \
   -allowProvisioningDeviceRegistration \
+  OTHER_CODE_SIGN_FLAGS="--keychain ~/Library/Keychains/xcodesign.keychain-db" \
   build
 
 xcrun devicectl device install app \
   --device 00008130-000848C6012B803A \
   ~/Library/Developer/Xcode/DerivedData/PersonalFinanceAI-*/Build/Products/Staging-iphoneos/PersonalFinanceAI.app
+
+# After building — always remove from search list
+security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain
 ```
 
 Tony's iPhone UDID: `00008130-000848C6012B803A`. If the signing cert ever goes missing (e.g. after a keychain wipe), re-run with `-allowProvisioningUpdates -allowProvisioningDeviceRegistration` and it will create a fresh one in the `xcodesign` keychain.
@@ -198,7 +204,8 @@ Tony's iPhone UDID: `00008130-000848C6012B803A`. If the signing cert ever goes m
 - **Schema migrations via Alembic.** Run `alembic upgrade head` from `backend/` before starting the app against a new database. Generate new migrations with `alembic revision --autogenerate -m "description"` after changing models.
 - **Tests use SQLite in-memory.** The pytest suite sets `DATABASE_URL=sqlite+aiosqlite:///:memory:` per-fixture and does not require a live PostgreSQL connection.
 - **Authentication.** JWT-based auth with short-lived access tokens (Bearer) and long-lived refresh tokens (HttpOnly cookie, scoped to `/api/v1/auth`). Use the `get_current_user` dependency from `app.dependencies` to protect any route. The `services/auth.py` layer handles hashing, JWT creation/decoding, and DB lookups; the route layer only maps `AuthError` → HTTP status codes. The `SECRET_KEY` env var must be set to a non-default value in production.
-- **Agents.** Each agent module under `app/agents/` defines only its prompt and output Pydantic model, then calls `build_agent` / `run_agent` from `_base.py`. Failures inside `run_agent` are wrapped as `AgentError` — route handlers catch `AgentError` (not bare `Exception`) and return a generic 502 so internal exception strings never leak to clients.
+- **Single-user data model.** This is a single-account deployment: registration is closed by default and the one operator account is created via `backend/scripts/create_user.py`. Resource tables (`accounts`, `periods`, `documents`, `journal_entries`, `raw_transactions`, …) intentionally have no `user_id`, and the backend connects with full DB privileges (no Postgres RLS) — all data is implicitly owned by that single account. This is a deliberate design choice, not a gap. **Any future multi-user support must first retrofit `user_id` columns plus ownership filters on every resource query (ideally backed by RLS) before `ALLOW_REGISTRATION` is ever enabled**, or it becomes an IDOR exposure.
+- **Agents.** Each agent module under `app/agents/` defines only its prompt and output Pydantic model, then calls `build_agent` / `run_agent` from `_base.py`. Failures inside `run_agent` are wrapped as `AgentError` — route handlers catch `AgentError` (not bare `Exception`) and return a generic 502 so internal exception strings never leak to clients. Untrusted text (transaction/journal-entry descriptions from uploads) flows into agent prompts; outputs must stay structured Pydantic and any acted-on values (e.g. account codes) validated against the DB before use — see `services/classify.py`.
 - **Request IDs and logging.** `RequestIdMiddleware` reads the `x-request-id` header (or mints one) per request, stores it in a `ContextVar`, and echoes it back in the response. The log format is `%(asctime)s %(levelname)s [%(request_id)s] %(name)s %(message)s`, so any log line emitted during a request is correlatable with the client's request id.
 - **iOS project file generation.** Don't edit `ios/PersonalFinanceAI.xcodeproj` directly — it's gitignored and regenerated by XcodeGen. Source files are picked up by directory globs in `ios/project.yml`; after adding a file under `App/`, `Core/`, `Features/`, `Shared/`, or `Widget/`, rerun `xcodegen` from `ios/` to refresh the project.
 - **Money on iOS.** The backend serialises `Decimal` as JSON **strings** (to avoid float drift). Swift models use the `@DecimalString` / `@OptionalDecimalString` property wrappers in `ios/Core/Networking/JSONCoding.swift`. Convert to `Double` only at the chart boundary — never store doubles in models.

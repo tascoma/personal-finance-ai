@@ -13,6 +13,12 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 
 
+# Precomputed hash of a throwaway value. Verified against when no user matches so
+# login spends the same bcrypt time whether or not the email exists (no enumeration
+# via response timing).
+_DUMMY_HASH = bcrypt.hashpw(b"timing-attack-mitigation", bcrypt.gensalt()).decode()
+
+
 def hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
@@ -101,7 +107,11 @@ async def register_user(db: AsyncSession, email: str, password: str) -> User:
 
 async def authenticate_user(db: AsyncSession, email: str, password: str) -> User:
     user = await get_user_by_email(db, email)
-    if user is None or not verify_password(password, user.hashed_password):
+    # Always run a bcrypt comparison, even for a missing user, so the response
+    # time doesn't reveal whether the email is registered.
+    if not verify_password(password, user.hashed_password if user else _DUMMY_HASH):
+        raise AuthError("Invalid credentials")
+    if user is None:
         raise AuthError("Invalid credentials")
     if not user.is_active:
         raise AuthError("Account is disabled")
