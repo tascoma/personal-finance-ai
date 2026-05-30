@@ -28,4 +28,4 @@ class OrchestrationResult(BaseModel):
     needs_review: int = 0
     classifier_ran: bool
     classifier_updated: int
-    steps: list[OrchestrationStepResult]
+    steps: list[OrchestrationStepResult] = []
