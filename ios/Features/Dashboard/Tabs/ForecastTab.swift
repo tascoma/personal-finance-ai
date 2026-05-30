@@ -17,56 +17,31 @@ struct ForecastTab: View {
             if let f = forecast {
                 let gain = f.trailingEoy - f.currentNetWorth
                 let gainPct = f.currentNetWorth != 0 ? gain / f.currentNetWorth * 100 : 0
-                let gainColor: Color = gain >= 0 ? .appGreen : .appRed
-                let netColor: Color = f.avgMonthlyNet >= 0 ? .appGreen : .appRed
 
-                KPIGrid {
-                    KPICard(label: "Current Net Worth",
-                            value: Money.format(Decimal(f.currentNetWorth)),
-                            valueColor: .appAccent,
-                            sub: "latest closed period")
-                    KPICard(label: "Projected EOY",
-                            value: Money.format(Decimal(f.trailingEoy)),
-                            valueColor: gainColor,
-                            sub: "trailing-avg")
-                    KPICard(label: "Projected Gain",
-                            value: String(format: "%@%@", gain >= 0 ? "+" : "", Money.format(Decimal(gain))),
-                            valueColor: gainColor,
-                            sub: String(format: "%@%.1f%% over %d mo",
-                                        gainPct >= 0 ? "+" : "", gainPct, f.monthsRemaining))
-                    KPICard(label: "Avg Monthly Net",
-                            value: String(format: "%@%@", f.avgMonthlyNet >= 0 ? "+" : "", Money.format(Decimal(f.avgMonthlyNet))),
-                            valueColor: netColor,
-                            sub: "trailing 12 periods")
-                }
+                HeroCard(
+                    style: .forecast,
+                    eyebrow: "Projected Net Worth",
+                    value: Money.format(Decimal(f.trailingEoy), fractionDigits: 0),
+                    delta: HeroDelta(
+                        text: "\(Money.delta(Decimal(gain))) (\(gainPct >= 0 ? "+" : "")\(String(format: "%.1f", gainPct))%) · EOY",
+                        trend: gain >= 0 ? .up : .down
+                    ),
+                    stats: [
+                        HeroStat(label: "Current NW", value: Money.format(Decimal(f.currentNetWorth), fractionDigits: 0)),
+                        HeroStat(label: "Avg Monthly Net", value: Money.delta(Decimal(f.avgMonthlyNet))),
+                        HeroStat(label: "Months Left", value: "\(f.monthsRemaining)"),
+                    ],
+                    sparkline: data.netWorthSeries.map { $0.netWorth.asDouble }
+                )
 
-                DashboardCard("Net Worth Forecast", subtitle: "historical · projected through EOY") {
+                DashboardCard("Net Worth Forecast", subtitle: "historical + projected through EOY") {
                     NetWorthForecastChart(forecast: f)
-                }
-
-                DashboardCard("Method", subtitle: "how these are computed") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Trailing-avg projection")
-                                .font(.subheadline.weight(.semibold))
-                            Text("Average monthly net (income − expenses) over the last 12 closed periods, applied forward through EOY.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Linear-regression projection")
-                                .font(.subheadline.weight(.semibold))
-                            Text("Least-squares line fit to the historical net-worth series. Sanity check vs. trailing-avg.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
                 }
             } else {
                 DashboardCard("Not enough data", subtitle: "close a period to project") {
                     Text("Need at least one closed period with net-worth history to forecast.")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.appTextTertiary)
                 }
             }
         }

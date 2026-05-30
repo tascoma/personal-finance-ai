@@ -23,11 +23,40 @@ struct DashboardView: View {
             content
                 .navigationTitle("Dashboard")
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarBackground(Color.appBackground, for: .navigationBar)
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) { yearFilterMenu }
                     ToolbarItem(placement: .topBarTrailing) { SignOutMenuButton() }
                 }
         }
-        .task { await vm.load() }
+        .task { await vm.bootstrap() }
+    }
+
+    private var yearFilterMenu: some View {
+        Menu {
+            ForEach(vm.filterOptions) { option in
+                Button {
+                    Task { await vm.select(option) }
+                } label: {
+                    if option == vm.selectedFilter {
+                        Label(option.label, systemImage: "checkmark")
+                    } else {
+                        Text(option.label)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "calendar")
+                    .font(.footnote)
+                Text(vm.selectedFilter.label)
+                    .font(.subheadline.weight(.medium))
+                Image(systemName: "chevron.down")
+                    .font(.caption2)
+            }
+            .foregroundStyle(Color.appAccent)
+        }
     }
 
     @ViewBuilder
@@ -51,7 +80,7 @@ struct DashboardView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Button("Try again") {
-                    Task { await vm.load() }
+                    Task { await vm.refresh() }
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -73,6 +102,14 @@ struct DashboardView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal, 4)
+
+                HStack(spacing: 6) {
+                    Text("Showing").eyebrow()
+                    Text(vm.selectedFilter.label)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.appAccent)
+                    Spacer()
+                }
 
                 Group {
                     switch selectedTab {

@@ -72,24 +72,22 @@ private struct SmallView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Net Worth")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            Text("Net Worth").eyebrow()
             Text(Money.compact(snapshot.netWorth))
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(.tint)
+                .font(.title2.weight(.semibold).monospacedDigit())
+                .foregroundStyle(Color.appAccent)
                 .minimumScaleFactor(0.7)
             Spacer()
             HStack(spacing: 4) {
                 Image(systemName: snapshot.monthlyNet >= 0 ? "arrow.up.right" : "arrow.down.right")
                     .font(.caption2)
                 Text(Money.compact(snapshot.monthlyNet))
-                    .font(.caption.weight(.medium))
+                    .font(.caption.weight(.medium).monospacedDigit())
             }
-            .foregroundStyle(snapshot.monthlyNet >= 0 ? .green : .red)
+            .foregroundStyle(snapshot.monthlyNet >= 0 ? Color.appGreen : Color.appRed)
             Text(snapshot.periodLabel)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.appTextTertiary)
         }
     }
 }
@@ -100,26 +98,24 @@ private struct MediumView: View {
     var body: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Net Worth")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                Text("Net Worth").eyebrow()
                 Text(Money.compact(snapshot.netWorth))
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(.tint)
+                    .font(.title2.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(Color.appAccent)
                     .minimumScaleFactor(0.7)
                 Spacer()
                 Text(snapshot.periodLabel)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.appTextTertiary)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 6) {
-                row(label: "Income", value: snapshot.monthlyIncome, color: .green)
-                row(label: "Expenses", value: snapshot.monthlyExpenses, color: .red)
+                row(label: "Income", value: snapshot.monthlyIncome, color: .appGreen)
+                row(label: "Expenses", value: snapshot.monthlyExpenses, color: .appRed)
                 Divider()
                 row(label: "Net",
                     value: snapshot.monthlyNet,
-                    color: snapshot.monthlyNet >= 0 ? .green : .red,
+                    color: snapshot.monthlyNet >= 0 ? .appGreen : .appRed,
                     bold: true)
             }
         }
@@ -145,34 +141,32 @@ private struct LargeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Net Worth")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                Text("Net Worth").eyebrow()
                 Text(Money.format(snapshot.netWorth))
-                    .font(.title.weight(.semibold))
-                    .foregroundStyle(.tint)
+                    .font(.title.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(Color.appAccent)
                     .minimumScaleFactor(0.7)
             }
 
             Divider()
 
-            row("Total Assets", snapshot.totalAssets, color: .primary)
-            row("Total Liabilities", snapshot.totalLiabilities, color: .red)
+            row("Total Assets", snapshot.totalAssets, color: .appTextPrimary)
+            row("Total Liabilities", snapshot.totalLiabilities, color: .appRed)
 
             Divider()
 
             Text("This month — \(snapshot.periodLabel)")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
-            row("Income", snapshot.monthlyIncome, color: .green)
-            row("Expenses", snapshot.monthlyExpenses, color: .red)
-            row("Net", snapshot.monthlyNet, color: snapshot.monthlyNet >= 0 ? .green : .red, bold: true)
+                .foregroundStyle(Color.appTextTertiary)
+            row("Income", snapshot.monthlyIncome, color: .appGreen)
+            row("Expenses", snapshot.monthlyExpenses, color: .appRed)
+            row("Net", snapshot.monthlyNet, color: snapshot.monthlyNet >= 0 ? .appGreen : .appRed, bold: true)
 
             Spacer()
 
             Text("Updated \(snapshot.capturedAt.formatted(date: .abbreviated, time: .shortened))")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.appTextTertiary)
         }
     }
 
@@ -197,7 +191,7 @@ private struct PlaceholderView: View {
         VStack(spacing: 8) {
             Image(systemName: "chart.bar.fill")
                 .font(.title2)
-                .foregroundStyle(.tint)
+                .foregroundStyle(Color.appAccent)
             Text("Open Personal Finance")
                 .font(family == .systemSmall ? .caption2 : .footnote)
                 .foregroundStyle(.secondary)

@@ -16,26 +16,25 @@ struct KPICard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Space.xs) {
             Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .eyebrow()
                 .lineLimit(2)
             Text(value)
-                .font(.title3.weight(.semibold))
+                .font(.title3.weight(.semibold).monospacedDigit())
                 .foregroundStyle(valueColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             if let sub = sub {
                 Text(sub)
                     .font(.caption2)
-                    .foregroundStyle(subColor ?? .secondary)
+                    .foregroundStyle(subColor ?? Color.appTextTertiary)
                     .lineLimit(1)
             }
         }
-        .padding(12)
+        .padding(Space.md)
         .frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
-        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
+        .appCardStyle()
     }
 }
 
@@ -48,8 +47,8 @@ struct KPIGrid<Content: View>: View {
 
     var body: some View {
         LazyVGrid(
-            columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
-            spacing: 12
+            columns: [GridItem(.flexible(), spacing: Space.md), GridItem(.flexible(), spacing: Space.md)],
+            spacing: Space.md
         ) {
             content()
         }
@@ -68,20 +67,24 @@ struct DashboardCard<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.md) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.headline)
+                    .foregroundStyle(Color.appTextPrimary)
                 if let sub = subtitle {
                     Text(sub)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.appTextTertiary)
                 }
             }
+            Rectangle()
+                .fill(Color.appLine)
+                .frame(height: 1)
             content()
         }
-        .padding(14)
+        .padding(Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 12))
+        .appCardStyle(radius: Radius.lg)
     }
 }

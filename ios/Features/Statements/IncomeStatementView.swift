@@ -25,16 +25,16 @@ struct IncomeStatementView: View {
         VStack(spacing: 6) {
             summaryRow("Total Income", response.totalIncome, color: .appGreen)
             summaryRow("Total Expenses", response.totalExpenses, color: .appRed)
-            Divider()
+            Rectangle().fill(Color.appLine).frame(height: 1)
             summaryRow("Net Income", response.netIncome, color: response.netIncome >= 0 ? .appGreen : .appRed, bold: true)
             if response.totalOci != 0 || response.comprehensiveIncome != response.netIncome {
                 summaryRow("Other Comprehensive Inc.", response.totalOci, color: .secondary)
                 summaryRow("Comprehensive Income", response.comprehensiveIncome, color: response.comprehensiveIncome >= 0 ? .appGreen : .appRed, bold: true)
             }
         }
-        .padding(12)
+        .padding(Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
+        .appCardStyle()
     }
 
     private func summaryRow(_ label: String, _ value: Decimal, color: Color, bold: Bool = false) -> some View {
@@ -53,6 +53,7 @@ struct IncomeStatementView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.headline)
+                .foregroundStyle(Color.appTextPrimary)
             ForEach(sections) { section in
                 StatementSectionView(section: section, totalColor: totalColor)
             }

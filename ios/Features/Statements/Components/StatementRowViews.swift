@@ -12,8 +12,9 @@ struct StatementLineRow: View {
         HStack(alignment: .firstTextBaseline) {
             Text(name)
                 .font(.callout)
+                .foregroundStyle(Color.appTextSecondary)
                 .lineLimit(1)
-                .padding(.leading, indented ? 12 : 0)
+                .padding(.leading, indented ? Space.md : 0)
             Spacer()
             Text(Money.format(amount))
                 .font(.callout.monospacedDigit())
@@ -48,24 +49,23 @@ struct StatementSectionView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(section.label)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .eyebrow()
                 .padding(.bottom, 2)
 
             ForEach(section.lines) { line in
                 StatementLineRow(name: line.accountName, amount: line.amount)
             }
 
-            Divider()
+            Rectangle().fill(Color.appLine).frame(height: 1)
             StatementSubtotalRow(
                 label: "Total \(section.label.lowercased())",
                 amount: section.subtotal,
                 amountColor: totalColor
             )
         }
-        .padding(12)
+        .padding(Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
+        .appCardStyle()
     }
 }
 
@@ -81,26 +81,25 @@ struct StatementLinesBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(header)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .eyebrow()
                 .padding(.bottom, 2)
 
             if lines.isEmpty {
                 Text("—")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 12)
+                    .foregroundStyle(Color.appTextTertiary)
+                    .padding(.leading, Space.md)
             } else {
                 ForEach(lines) { line in
                     StatementLineRow(name: line.accountName, amount: line.amount)
                 }
             }
 
-            Divider()
+            Rectangle().fill(Color.appLine).frame(height: 1)
             StatementSubtotalRow(label: totalLabel, amount: total, amountColor: totalColor)
         }
-        .padding(12)
+        .padding(Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
+        .appCardStyle()
     }
 }

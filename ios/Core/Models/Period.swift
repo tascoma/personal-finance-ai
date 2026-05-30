@@ -28,6 +28,13 @@ extension Period {
         Period.labelFormatter.string(from: periodStart)
     }
 
+    /// Calendar year of the period start, computed in GMT to match `label`.
+    var calendarYear: Int {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
+        return cal.component(.year, from: periodStart)
+    }
+
     private static let labelFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
