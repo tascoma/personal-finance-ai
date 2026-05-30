@@ -1,5 +1,6 @@
-import { del, get, post } from './client'
+import { del, get, post, streamPost } from './client'
 import type {
+  OrchestrationEvent,
   OrchestrationResult,
   Period,
   PeriodCreate,
@@ -41,6 +42,10 @@ export function parseAllDocuments(periodId: string): Promise<{ parsed: number; e
 
 export function orchestrateParse(periodId: string): Promise<OrchestrationResult> {
   return post<OrchestrationResult>(`/periods/${periodId}/orchestrate-parse`)
+}
+
+export function orchestrateParseStream(periodId: string): AsyncGenerator<OrchestrationEvent> {
+  return streamPost<OrchestrationEvent>(`/periods/${periodId}/orchestrate-parse/stream`)
 }
 
 export function saveBalances(periodId: string, balances: StatedBalanceItem[]): Promise<{ ok: boolean }> {
