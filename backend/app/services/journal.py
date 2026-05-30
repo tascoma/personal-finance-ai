@@ -159,6 +159,7 @@ async def post_period(db: AsyncSession, period_id: uuid.UUID) -> int:
         .where(
             RawTransaction.period_id == period_id,
             RawTransaction.status == "approved",
+            RawTransaction.is_duplicate.is_(False),
         )
         .order_by(RawTransaction.document_id, RawTransaction.txn_date)
     )
@@ -380,12 +381,14 @@ async def unpost_document(
 
     entry_ids = {t.journal_entry_id for t in txns if t.journal_entry_id}
 
-    await db.execute(delete(JournalLine).where(JournalLine.entry_id.in_(entry_ids)))
-    await db.execute(delete(JournalEntry).where(JournalEntry.entry_id.in_(entry_ids)))
-
     for txn in txns:
         txn.status = "approved"
         txn.journal_entry_id = None
+
+    await db.flush()
+
+    await db.execute(delete(JournalLine).where(JournalLine.entry_id.in_(entry_ids)))
+    await db.execute(delete(JournalEntry).where(JournalEntry.entry_id.in_(entry_ids)))
 
     await db.commit()
     logger.info(

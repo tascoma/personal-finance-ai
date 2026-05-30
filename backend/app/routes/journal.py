@@ -60,12 +60,20 @@ async def get_journal_page(
 
     staged_result = await db.scalars(
         select(RawTransaction)
-        .where(RawTransaction.period_id == period_id, RawTransaction.status == "staged")
+        .where(
+            RawTransaction.period_id == period_id,
+            RawTransaction.status == "staged",
+            RawTransaction.is_duplicate.is_(False),
+        )
         .order_by(RawTransaction.txn_date, RawTransaction.created_at)
     )
     approved_result = await db.scalars(
         select(RawTransaction)
-        .where(RawTransaction.period_id == period_id, RawTransaction.status == "approved")
+        .where(
+            RawTransaction.period_id == period_id,
+            RawTransaction.status == "approved",
+            RawTransaction.is_duplicate.is_(False),
+        )
         .order_by(RawTransaction.txn_date, RawTransaction.created_at)
     )
     entries_result = await db.scalars(
