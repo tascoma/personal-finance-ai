@@ -1,40 +1,36 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import SvgIcon from './SvgIcon'
 
-interface NavItem {
-  to: string
-  icon: 'dashboard' | 'periods' | 'journal' | 'statements' | 'accounts'
-  label: string
-}
-
-const NAV: NavItem[] = [
-  { to: '/', icon: 'dashboard', label: 'Dashboard' },
-  { to: '/periods', icon: 'periods', label: 'Workflow' },
-  { to: '/ledger', icon: 'journal', label: 'Ledger' },
-  { to: '/ledger/statements', icon: 'statements', label: 'Statements' },
-  { to: '/accounts', icon: 'accounts', label: 'Accounts' },
+const NAV = [
+  { to: '/',            icon: 'dashboard',  tip: 'Dashboard' },
+  { to: '/periods',     icon: 'periods',    tip: 'Workflow' },
+  { to: '/ledger',      icon: 'journal',    tip: 'Ledger' },
+  { to: '/statements',  icon: 'statements', tip: 'Statements' },
+  { to: '/accounts',    icon: 'accounts',   tip: 'Accounts' },
 ]
 
 export default function Sidebar() {
+  const { pathname } = useLocation()
+
   return (
     <nav className="sidebar">
-      <ul className="sidebar-nav">
-        {NAV.map((item) => (
-          <li key={item.to}>
-            <NavLink
-              to={item.to}
-              end={item.to === '/' || item.to === '/ledger/statements' || item.to === '/ledger'}
-              className={({ isActive }) =>
-                `nav-link${isActive ? ' nav-link--active' : ''}`
-              }
-              data-tooltip={item.label}
-              aria-label={item.label}
-            >
-              <SvgIcon name={item.icon} size={18} />
-            </NavLink>
-          </li>
-        ))}
-      </ul>
+      {NAV.map((item) => {
+        const isActive = item.to === '/'
+          ? pathname === '/'
+          : pathname.startsWith(item.to)
+        return (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={`nav-link${isActive ? ' active' : ''}`}
+            data-tip={item.tip}
+            aria-label={item.tip}
+            end={item.to === '/'}
+          >
+            <SvgIcon name={item.icon} size={18} />
+          </NavLink>
+        )
+      })}
     </nav>
   )
 }

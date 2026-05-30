@@ -1,48 +1,35 @@
-import { Link } from 'react-router-dom'
 import type { Period } from '../types'
 import SvgIcon from './SvgIcon'
 
-const STEPS: Array<{ status: Period['status']; label: string; sub: string; path: string }> = [
-  { status: 'open', label: 'Input', sub: 'Upload docs', path: '' },
-  { status: 'pending_review', label: 'Parse', sub: 'Classify txns', path: '/journal' },
-  { status: 'pending_close', label: 'Journal', sub: 'Post entries', path: '/journal' },
-  { status: 'closed', label: 'Close', sub: 'Reconcile', path: '/reconcile' },
+const STEPS = [
+  { status: 'open',           name: 'Documents & balances', meta: 'Upload statements' },
+  { status: 'pending_review', name: 'Review transactions',  meta: 'Classify & approve' },
+  { status: 'pending_close',  name: 'Reconcile & post',     meta: 'Close the period' },
+  { status: 'closed',         name: 'Closed',               meta: '' },
 ]
 
-const STATUS_ORDER: Record<Period['status'], number> = {
-  open: 0,
-  pending_review: 1,
-  pending_close: 2,
-  closed: 3,
-}
+const ORDER: Record<string, number> = { open: 0, pending_review: 1, pending_close: 2, closed: 3 }
 
 interface Props {
   period: Period
 }
 
 export default function PeriodStepper({ period }: Props) {
-  const current = STATUS_ORDER[period.status]
-
+  const current = ORDER[period.status] ?? 0
   return (
-    <div className="stepper">
-      {STEPS.map((step, i) => {
-        const state = i < current ? 'done' : i === current ? 'active' : 'pending'
+    <div className="steps">
+      {STEPS.map((s, i) => {
+        const cls = i < current ? 'done' : i === current ? 'active' : ''
         return (
-          <Link
-            key={step.status}
-            to={`/periods/${period.period_id}${step.path}`}
-            className={`step step--${state}`}
-            style={{ textDecoration: 'none' }}
-          >
-            <div className={`step-circle step-circle--${state}`}>
-              {state === 'done' ? <SvgIcon name="check" size={12} /> : i + 1}
+          <div key={s.status} className={`step ${cls}`}>
+            <div className="step-circle">
+              {i < current ? <SvgIcon name="check" size={14} strokeWidth={2.5} /> : i + 1}
             </div>
-            <div>
-              <div className="step-label">{step.label}</div>
-              <div className="step-sub">{step.sub}</div>
+            <div className="stack">
+              <div className="step-name">{s.name}</div>
+              {s.meta && <div className="step-meta">{s.meta}</div>}
             </div>
-            {state === 'active' && <div className="step-dot" />}
-          </Link>
+          </div>
         )
       })}
     </div>
