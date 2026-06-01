@@ -14,7 +14,7 @@ export default function Banner({ variant, children, style, noIcon }: Props) {
   return (
     <div className={`banner banner--${variant}`} style={style}>
       {!noIcon && <SvgIcon name={ICONS[variant]} size={14} />}
-      {children}
+      <span>{children}</span>
     </div>
   )
 }

@@ -89,6 +89,7 @@ class DashboardResponse(BaseModel):
     retirement_contributions: str
     compensation_income: str
     lifestyle_expenses: str
+    oci: str
     liquid_assets: str
     liquid_assets_prev: str
     tax_advantaged: str

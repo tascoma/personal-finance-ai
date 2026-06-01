@@ -55,6 +55,7 @@ async def get_dashboard(
         retirement_contributions=str(data.retirement_contributions),
         compensation_income=str(data.compensation_income),
         lifestyle_expenses=str(data.lifestyle_expenses),
+        oci=str(data.oci),
         liquid_assets=str(data.liquid_assets),
         liquid_assets_prev=str(data.liquid_assets_prev),
         tax_advantaged=str(data.tax_advantaged),

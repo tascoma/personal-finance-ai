@@ -3,18 +3,21 @@ import { render, screen } from '@testing-library/react'
 import StatusBadge from '../StatusBadge'
 
 describe('StatusBadge', () => {
-  it('renders the status with underscores replaced by spaces', () => {
+  it('renders the human-readable label for a known status', () => {
     render(<StatusBadge status="pending_review" />)
-    expect(screen.getByText('pending review')).toBeInTheDocument()
+    expect(screen.getByText('Review')).toBeInTheDocument()
   })
 
-  it('applies a CSS class based on the status prop', () => {
-    render(<StatusBadge status="open" />)
-    expect(screen.getByText('open')).toHaveClass('badge--open')
+  it('applies the correct variant class for open status', () => {
+    const { container } = render(<StatusBadge status="open" />)
+    const badge = container.querySelector('.badge')
+    expect(badge).toHaveClass('badge--green')
   })
 
-  it('renders a plain status without transformation issues', () => {
-    render(<StatusBadge status="closed" />)
-    expect(screen.getByText('closed')).toBeInTheDocument()
+  it('renders a closed badge with ghost variant', () => {
+    const { container } = render(<StatusBadge status="closed" />)
+    expect(screen.getByText('Closed')).toBeInTheDocument()
+    const badge = container.querySelector('.badge')
+    expect(badge).toHaveClass('badge--ghost')
   })
 })

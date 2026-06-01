@@ -1,10 +1,9 @@
 import { get } from './client'
 import type { DashboardResponse } from '../types'
 
-export function fetchDashboard(fromPeriodId?: string, toPeriodId?: string): Promise<DashboardResponse> {
+export function fetchDashboard(year?: number): Promise<DashboardResponse> {
   const params = new URLSearchParams()
-  if (fromPeriodId != null) params.set('from_period_id', fromPeriodId)
-  if (toPeriodId != null) params.set('to_period_id', toPeriodId)
+  if (year != null) params.set('year', String(year))
   const qs = params.toString()
   return get<DashboardResponse>(`/dashboard${qs ? `?${qs}` : ''}`)
 }

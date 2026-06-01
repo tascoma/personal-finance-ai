@@ -9,12 +9,6 @@ struct ExpenseInsightsTab: View {
         return data.lifestyleExpenses.asDouble / comp * 100
     }
 
-    private var lifestyleColor: Color {
-        if lifestylePct > 30 { return .appRed }
-        if lifestylePct > 20 { return .appAmber }
-        return .appGreen
-    }
-
     private var avgExpPerPeriod: Decimal {
         guard data.periodCount > 0 else { return 0 }
         return data.totalExpenses / Decimal(data.periodCount)
@@ -26,12 +20,6 @@ struct ExpenseInsightsTab: View {
         return data.totalExpenses.asDouble / inc * 100
     }
 
-    private var expIncomeColor: Color {
-        if expToIncomePct > 100 { return .appRed }
-        if expToIncomePct > 80 { return .appAmber }
-        return .appGreen
-    }
-
     private var periodDeltaPct: Double? {
         guard data.periodBars.count >= 2 else { return nil }
         let last = data.periodBars[data.periodBars.count - 1].expenses.asDouble
@@ -40,44 +28,61 @@ struct ExpenseInsightsTab: View {
         return (last - prev) / prev * 100
     }
 
+    private var expenseSeries: [Double] { data.periodBars.map { $0.expenses.asDouble } }
+
+    private var hero: HeroCard {
+        var delta: HeroDelta?
+        if let pct = periodDeltaPct {
+            delta = HeroDelta(
+                text: "\(pct >= 0 ? "+" : "")\(String(format: "%.1f", pct))% vs prior period",
+                trend: pct >= 0 ? .up : .down
+            )
+        }
+        return HeroCard(
+            style: .expenses,
+            eyebrow: "Total Expenses",
+            value: Money.format(data.totalExpenses, fractionDigits: 0),
+            delta: delta,
+            stats: [
+                HeroStat(label: "Lifestyle Rate", value: String(format: "%.1f%%", lifestylePct)),
+                HeroStat(label: "Exp / Income", value: String(format: "%.1f%%", expToIncomePct)),
+                HeroStat(label: "Avg / Period", value: Money.format(avgExpPerPeriod, fractionDigits: 0)),
+            ],
+            sparkline: expenseSeries
+        )
+    }
+
+    private var expenseSegments: [RingSegment] {
+        data.topExpenseCategories.prefix(8).enumerated().map { idx, c in
+            RingSegment(name: c.category, amount: c.amount.asDouble,
+                        color: ChartPalette.expense[idx % ChartPalette.expense.count])
+        }
+    }
+
     var body: some View {
         VStack(spacing: 16) {
-            KPIGrid {
-                KPICard(label: "Lifestyle Rate",
-                        value: String(format: "%.1f%%", lifestylePct),
-                        valueColor: lifestyleColor,
-                        sub: "of salary + bonus")
-                KPICard(label: "Lifestyle Spend",
-                        value: Money.format(data.lifestyleExpenses),
-                        valueColor: .appRed)
-                KPICard(label: "Avg / Period",
-                        value: Money.format(avgExpPerPeriod),
-                        valueColor: .appRed,
-                        sub: "\(data.periodCount) periods")
-                KPICard(label: "Expense / Income",
-                        value: String(format: "%.1f%%", expToIncomePct),
-                        valueColor: expIncomeColor,
-                        sub: "spent vs earned")
-                if let top = data.topExpenseCategories.first {
-                    let pct = data.totalExpenses > 0
-                        ? top.amount.asDouble / data.totalExpenses.asDouble * 100
-                        : 0
-                    KPICard(label: "Top Category",
-                            value: top.category,
-                            valueColor: .appAccent,
-                            sub: String(format: "%.0f%% of expenses", pct))
-                }
-                if let delta = periodDeltaPct {
-                    KPICard(label: "Δ vs Prior",
-                            value: String(format: "%@%.1f%%", delta >= 0 ? "+" : "", delta),
-                            valueColor: delta > 0 ? .appRed : .appGreen,
-                            sub: "period over period")
+            hero
+
+            if !data.topExpenseCategories.isEmpty {
+                DashboardCard("Expense Mix",
+                              subtitle: "\(Money.format(data.totalExpenses, fractionDigits: 0)) across \(data.topExpenseCategories.count) categories") {
+                    RingWithLegend(segments: expenseSegments,
+                                   centerValue: Money.compact(data.totalExpenses),
+                                   centerLabel: "Total")
                 }
             }
 
-            if !data.topExpenseCategories.isEmpty {
-                DashboardCard("Expense Mix", subtitle: "top \(data.topExpenseCategories.count)") {
-                    ExpenseMixDonut(categories: data.topExpenseCategories)
+            if !data.expenseCategorySeries.isEmpty {
+                DashboardCard("Expense Trendlines", subtitle: "by sub-category") {
+                    ExpenseTrendlinesChart(series: data.expenseCategorySeries,
+                                           topCategories: data.topExpenseCategories)
+                }
+            }
+
+            if !data.topExpenseCategories.isEmpty && data.compensationIncome > 0 {
+                DashboardCard("Category Spend vs Compensation", subtitle: "each category as % of salary + bonus") {
+                    CategoryVsCompChart(categories: data.topExpenseCategories,
+                                        compensation: data.compensationIncome)
                 }
             }
         }
