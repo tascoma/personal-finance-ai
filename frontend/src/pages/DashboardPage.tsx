@@ -284,7 +284,7 @@ export default function DashboardPage() {
   const compensation = parseFloat(data.compensation_income)
   const savingsContribs = parseFloat(data.retirement_contributions)
   const savingsRate = compensation > 0 ? (savingsContribs / compensation) * 100 : 0
-  const lastBar = bars[bars.length - 1]
+
   const lastMonthNwDelta = nwSeries.length >= 2 ? nwSeries[nwSeries.length - 1] - nwSeries[nwSeries.length - 2] : null
   const totalLiabilities = parseFloat(data.total_assets) - currentNw
   const debtToEquity = currentNw !== 0 ? totalLiabilities / currentNw : null
