@@ -21,15 +21,18 @@ struct PeriodPicker: View {
             HStack(spacing: 6) {
                 Image(systemName: "calendar")
                     .font(.footnote)
+                    .foregroundStyle(Color.appAccent)
                 Text(currentLabel)
                     .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Color.appTextPrimary)
                 Image(systemName: "chevron.down")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.appTextTertiary)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.appCard, in: Capsule())
+            .padding(.horizontal, Space.md)
+            .padding(.vertical, Space.sm)
+            .background(Color.appSurface, in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.appLine, lineWidth: 1))
         }
         .disabled(periods.isEmpty)
     }

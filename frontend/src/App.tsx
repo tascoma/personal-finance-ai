@@ -8,9 +8,9 @@ import LedgerPage from './pages/LedgerPage'
 import StatementsPage from './pages/StatementsPage'
 import PeriodsListPage from './pages/PeriodsListPage'
 import PeriodDetailPage from './pages/PeriodDetailPage'
-import TransactionsPage from './pages/TransactionsPage'
 import JournalPage from './pages/JournalPage'
 import ReconcilePage from './pages/ReconcilePage'
+import CloseWizardPage from './pages/CloseWizardPage'
 import LoginPage from './pages/LoginPage'
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -27,12 +27,14 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/accounts" element={<ProtectedRoute><AccountsPage /></ProtectedRoute>} />
-        {/* /ledger/statements must come before /ledger to avoid prefix match */}
-        <Route path="/ledger/statements" element={<ProtectedRoute><StatementsPage /></ProtectedRoute>} />
+        <Route path="/statements" element={<ProtectedRoute><StatementsPage /></ProtectedRoute>} />
+        {/* Legacy redirect */}
+        <Route path="/ledger/statements" element={<Navigate to="/statements" replace />} />
         <Route path="/ledger" element={<ProtectedRoute><LedgerPage /></ProtectedRoute>} />
         <Route path="/periods" element={<ProtectedRoute><PeriodsListPage /></ProtectedRoute>} />
         <Route path="/periods/:periodId" element={<ProtectedRoute><PeriodDetailPage /></ProtectedRoute>} />
-        <Route path="/periods/:periodId/transactions" element={<ProtectedRoute><TransactionsPage /></ProtectedRoute>} />
+        <Route path="/periods/:periodId/close" element={<ProtectedRoute><CloseWizardPage /></ProtectedRoute>} />
+        {/* Standalone journal / reconcile routes (still accessible directly) */}
         <Route path="/periods/:periodId/journal" element={<ProtectedRoute><JournalPage /></ProtectedRoute>} />
         <Route path="/periods/:periodId/reconcile" element={<ProtectedRoute><ReconcilePage /></ProtectedRoute>} />
       </Routes>

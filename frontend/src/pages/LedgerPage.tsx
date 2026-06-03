@@ -6,6 +6,7 @@ import Layout from '../components/Layout'
 import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
 import EmptyState from '../components/EmptyState'
+import SvgIcon from '../components/SvgIcon'
 import { fmtPeriod, fmtDate, fmtDebitCredit } from '../utils/format'
 
 export default function LedgerPage() {
@@ -20,9 +21,18 @@ export default function LedgerPage() {
 
   return (
     <Layout>
-      <PageHeader title="Ledger" subtitle="All journal entries, grouped by period" />
+      <PageHeader
+        eyebrow="General Ledger"
+        title="All posted entries"
+        subtitle={data ? `${data.periods.length} closed periods` : undefined}
+        actions={
+          <button className="btn btn-secondary btn-sm">
+            <SvgIcon name="download" size={13} /> Export CSV
+          </button>
+        }
+      />
 
-      {isLoading && <p className="color-text3">Loading…</p>}
+      {isLoading && <p className="muted">Loading…</p>}
       {error && <p className="color-red">Failed to load ledger.</p>}
 
       {!isLoading && !error && !data?.periods.length && (
@@ -31,114 +41,114 @@ export default function LedgerPage() {
         </div>
       )}
 
-      {data?.periods.map((period) => {
-        const entries = data.entries_by_period[period.period_id] ?? []
-        const isCollapsed = collapsed[period.period_id]
+      <div className="stack gap-4">
+        {data?.periods.map((period) => {
+          const entries = data.entries_by_period[period.period_id] ?? []
+          const isCollapsed = collapsed[period.period_id]
 
-        return (
-          <div key={period.period_id} className="card mb-16">
-            <div className="card-hd">
-              <div>
-                <div className="page-title-row" style={{ gap: 10 }}>
-                  <div className="card-title">{fmtPeriod(period.period_start)}</div>
-                  <StatusBadge status={period.status} />
+          return (
+            <div key={period.period_id} className="card">
+              <div className="card-hd">
+                <div>
+                  <div className="row gap-3">
+                    <div className="card-title">{fmtPeriod(period.period_start)}</div>
+                    <StatusBadge status={period.status} />
+                  </div>
+                  <div className="card-sub">
+                    {period.period_start} → {period.period_end} · {entries.length}{' '}
+                    {entries.length === 1 ? 'entry' : 'entries'}
+                  </div>
                 </div>
-                <div className="card-sub">
-                  {period.period_start} → {period.period_end} · {entries.length}{' '}
-                  {entries.length === 1 ? 'entry' : 'entries'}
-                </div>
-              </div>
-              <div className="card-hd-right" style={{ gap: 8 }}>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => toggle(period.period_id)}
-                  aria-expanded={!isCollapsed}
-                >
-                  <svg
-                    width={14}
-                    height={14}
-                    viewBox="0 0 14 14"
-                    style={{ transition: 'transform .2s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
+                <div className="row gap-2">
+                  <Link to={`/periods/${period.period_id}`} className="btn btn-ghost btn-sm">
+                    Open period <SvgIcon name="arrow" size={13} />
+                  </Link>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => toggle(period.period_id)}
+                    aria-expanded={!isCollapsed}
                   >
-                    <path d="M2 4.5 7 9.5 12 4.5" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  <span>{isCollapsed ? 'Expand' : 'Collapse'}</span>
-                </button>
-                <Link to={`/periods/${period.period_id}/journal`} className="btn btn-ghost btn-sm">
-                  Open Journal →
-                </Link>
+                    <SvgIcon
+                      name="chevron-down"
+                      size={14}
+                      style={{ transition: 'transform .2s', transform: isCollapsed ? 'rotate(-90deg)' : undefined }}
+                    />
+                    {isCollapsed ? 'Expand' : 'Collapse'}
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {!isCollapsed && (
-              entries.length ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '14px 20px' }}>
-                  {entries.map((entry) => {
-                    const totalDebit = entry.lines.reduce((s, l) => s + parseFloat(l.debit_amount), 0)
-                    const totalCredit = entry.lines.reduce((s, l) => s + parseFloat(l.credit_amount), 0)
-                    return (
-                      <div key={entry.entry_id} className="card" style={{ margin: 0 }}>
-                        <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <span style={{ fontWeight: 600, fontSize: 13.5 }}>{entry.description}</span>
-                            <span className="mono color-text3" style={{ fontSize: 12, marginLeft: 12 }}>{fmtDate(entry.entry_date)}</span>
+              {!isCollapsed && (
+                entries.length ? (
+                  <div className="stack gap-3" style={{ padding: '14px 16px' }}>
+                    {entries.map((entry) => {
+                      const totalDebit = entry.lines.reduce((s, l) => s + parseFloat(l.debit_amount), 0)
+                      const totalCredit = entry.lines.reduce((s, l) => s + parseFloat(l.credit_amount), 0)
+                      return (
+                        <div key={entry.entry_id} className="card" style={{ margin: 0 }}>
+                          <div className="card-hd">
+                            <div>
+                              <div className="card-title">{entry.description}</div>
+                              <div className="card-sub mono">{fmtDate(entry.entry_date)}</div>
+                            </div>
+                            <div className="row gap-3">
+                              <span className="badge badge--ghost">{entry.source_type.replace(/_/g,' ')}</span>
+                              <span className="mono fw-600">${totalDebit.toFixed(2)}</span>
+                            </div>
                           </div>
-                          <span className="badge badge--parsed">{entry.source_type}</span>
-                        </div>
-                        {entry.lines.length > 0 && (
-                          <div className="table-scroll">
-                          <table className="data-table" style={{ tableLayout: 'fixed' }}>
-                            <thead>
-                              <tr>
-                                <th>Account</th>
-                                <th>Memo</th>
-                                <th className="text-right" style={{ width: 130 }}>Debit</th>
-                                <th className="text-right" style={{ width: 130 }}>Credit</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {entry.lines.map((line) => {
-                                const acct = data.accounts_by_code[line.account_code]
-                                return (
-                                  <tr key={line.line_id}>
-                                    <td className="mono" style={{ fontSize: 13 }}>
-                                      {line.account_code}{acct ? ` · ${acct.account_name}` : ''}
-                                    </td>
-                                    <td className="color-text3" style={{ fontSize: 12 }}>{line.memo ?? ''}</td>
-                                    <td className="mono text-right" style={{ color: parseFloat(line.debit_amount) > 0 ? 'var(--text-1)' : 'var(--text-3)' }}>
-                                      {fmtDebitCredit(line.debit_amount)}
-                                    </td>
-                                    <td className="mono text-right" style={{ color: parseFloat(line.credit_amount) > 0 ? 'var(--text-1)' : 'var(--text-3)' }}>
-                                      {fmtDebitCredit(line.credit_amount)}
-                                    </td>
+                          {entry.lines.length > 0 && (
+                            <div className="tbl-scroll">
+                              <table className="tbl">
+                                <thead>
+                                  <tr>
+                                    <th>Account</th>
+                                    <th>Memo</th>
+                                    <th className="text-right">Debit</th>
+                                    <th className="text-right">Credit</th>
                                   </tr>
-                                )
-                              })}
-                            </tbody>
-                            <tfoot>
-                              <tr>
-                                <td className="color-text3" style={{ fontSize: 12 }} colSpan={2}>Total</td>
-                                <td className="mono text-right fw-600">${totalDebit.toFixed(2)}</td>
-                                <td className="mono text-right fw-600">${totalCredit.toFixed(2)}</td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="empty-state">
-                  <p className="empty-msg">No entries posted yet.</p>
-                  <p className="empty-hint">Approve transactions and post them, or upload an opening-balances file.</p>
-                </div>
-              )
-            )}
-          </div>
-        )
-      })}
+                                </thead>
+                                <tbody>
+                                  {entry.lines.map((line) => {
+                                    const acct = data.accounts_by_code[line.account_code]
+                                    return (
+                                      <tr key={line.line_id}>
+                                        <td className="mono" style={{ fontSize: 13 }}>
+                                          <span className="muted">{line.account_code}</span>
+                                          {acct ? ` · ${acct.account_name}` : ''}
+                                        </td>
+                                        <td className="muted" style={{ fontSize: 12 }}>{line.memo ?? ''}</td>
+                                        <td className="mono text-right" style={{ color: parseFloat(line.debit_amount) > 0 ? 'var(--text)' : 'var(--text-3)' }}>
+                                          {fmtDebitCredit(line.debit_amount)}
+                                        </td>
+                                        <td className="mono text-right" style={{ color: parseFloat(line.credit_amount) > 0 ? 'var(--text)' : 'var(--text-3)' }}>
+                                          {fmtDebitCredit(line.credit_amount)}
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                                <tfoot>
+                                  <tr>
+                                    <td colSpan={2} className="muted" style={{ fontSize: 12 }}>Total</td>
+                                    <td className="mono text-right fw-600">${totalDebit.toFixed(2)}</td>
+                                    <td className="mono text-right fw-600">${totalCredit.toFixed(2)}</td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <EmptyState message="No entries posted yet." hint="Approve transactions and post them from the period workflow." />
+                )
+              )}
+            </div>
+          )
+        })}
+      </div>
     </Layout>
   )
 }

@@ -10,12 +10,12 @@ interface Props {
 
 export default function EmptyState({ icon = 'file', message, hint, children }: Props) {
   return (
-    <div className="empty-state">
+    <div className="empty">
       <div className="empty-icon">
         <SvgIcon name={icon} size={20} />
       </div>
-      <div className="empty-msg">{message}</div>
-      {hint && <div className="empty-hint">{hint}</div>}
+      <div className="empty-title">{message}</div>
+      {hint && <div className="empty-sub">{hint}</div>}
       {children}
     </div>
   )

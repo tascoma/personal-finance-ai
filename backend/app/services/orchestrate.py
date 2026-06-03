@@ -16,10 +16,15 @@ The flow:
      `classify_service.classify_period` once for the period at the end.
 
 Per-step failures are caught so a single bad file doesn't abort the rest.
+
+`orchestrate_parse_stream` is the canonical implementation — an async generator
+that yields SSE-compatible progress dicts throughout execution.
+`orchestrate_parse` is a thin wrapper that collects the final result.
 """
 
 import logging
 import uuid
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Sequence
 
@@ -34,7 +39,7 @@ from app.agents.orchestrator import (
 )
 from app.models.account import Account
 from app.models.document import Document
-from app.schemas.orchestrate import OrchestrationResult, OrchestrationStepResult
+from app.schemas.orchestrate import OrchestrationResult
 from app.services import classify as classify_service
 from app.services import parse as parse_service
 from app.services.file_readers import (
@@ -127,10 +132,24 @@ async def _load_account_choices(db: AsyncSession) -> tuple[list[AccountChoice], 
     return choices, by_code
 
 
-async def orchestrate_parse(
+async def orchestrate_parse_stream(
     db: AsyncSession,
     period_id: uuid.UUID,
-) -> OrchestrationResult:
+) -> AsyncGenerator[dict, None]:
+    """Async generator that runs orchestration and yields SSE-compatible progress dicts.
+
+    Events emitted (in order):
+      {"event": "planning"}
+      {"event": "planned", "doc_count": N}
+      {"event": "parsing",  "file_name": str, "index": int, "total": int}  — once per doc
+      {"event": "parsed",   "file_name": str, "index": int, "total": int,
+                             "status": "complete"|"failed"|"needs_review",
+                             "txn_count": int}   — txn_count only on complete
+      {"event": "classifying"}   — only if classifier runs
+      {"event": "complete", "parsed": int, "failed": int, "needs_review": int,
+                             "classifier_ran": bool, "classifier_updated": int}
+      {"event": "error",    "message": str}   — emitted before re-raising on fatal errors
+    """
     docs_result = await db.scalars(
         select(Document).where(
             Document.period_id == period_id,
@@ -139,15 +158,15 @@ async def orchestrate_parse(
     )
     pending: Sequence[Document] = docs_result.all()
     if not pending:
-        return OrchestrationResult(
-            period_id=period_id,
-            parsed=0,
-            failed=0,
-            needs_review=0,
-            classifier_ran=False,
-            classifier_updated=0,
-            steps=[],
-        )
+        yield {
+            "event": "complete",
+            "parsed": 0,
+            "failed": 0,
+            "needs_review": 0,
+            "classifier_ran": False,
+            "classifier_updated": 0,
+        }
+        return
 
     docs_by_id: dict[uuid.UUID, Document] = {d.document_id: d for d in pending}
     digests = [_build_digest(d) for d in pending]
@@ -165,7 +184,15 @@ async def orchestrate_parse(
             period_id,
         )
 
-    plan: OrchestrationPlan = await run_orchestrator(digests, account_choices)
+    yield {"event": "planning"}
+
+    try:
+        plan: OrchestrationPlan = await run_orchestrator(digests, account_choices)
+    except Exception:
+        logger.exception("Orchestrator agent failed for period %s", period_id)
+        yield {"event": "error", "message": "Orchestration agent failed"}
+        raise
+
     logger.info(
         "Orchestrator planned %d steps for period %s (from %d pending docs)",
         len(plan.steps),
@@ -184,7 +211,8 @@ async def orchestrate_parse(
             step.source_account_reason,
         )
 
-    step_results: list[OrchestrationStepResult] = []
+    yield {"event": "planned", "doc_count": len(plan.steps)}
+
     any_classifier_requested = False
     parsed = 0
     failed = 0
@@ -194,25 +222,11 @@ async def orchestrate_parse(
     missing = [d for d in pending if d.document_id not in planned_ids]
     for d in missing:
         logger.warning("Orchestrator skipped document %s — recording as failed", d.document_id)
-        step_results.append(
-            OrchestrationStepResult(
-                document_id=d.document_id,
-                file_name=d.file_name,
-                resolved_type=d.document_type,
-                resolved_source_account_code=d.source_account_code,
-                resolved_account_name=(
-                    accounts_by_code[d.source_account_code].account_name
-                    if d.source_account_code in accounts_by_code
-                    else None
-                ),
-                run_classifier=False,
-                status="failed",
-                error="Orchestrator did not return a plan for this document",
-            )
-        )
+        yield {"event": "parsed", "file_name": d.file_name, "status": "failed"}
         failed += 1
 
-    for step in plan.steps:
+    total_planned = len(plan.steps)
+    for i, step in enumerate(plan.steps):
         doc = docs_by_id.get(step.document_id)
         if doc is None:
             logger.warning(
@@ -222,6 +236,13 @@ async def orchestrate_parse(
 
         doc_id = doc.document_id
         file_name = doc.file_name
+
+        yield {
+            "event": "parsing",
+            "file_name": file_name,
+            "index": i + 1,
+            "total": total_planned,
+        }
 
         if step.resolved_type != doc.document_type:
             logger.info(
@@ -267,44 +288,29 @@ async def orchestrate_parse(
                 step.resolved_type,
                 step.source_account_reason,
             )
-            step_results.append(
-                OrchestrationStepResult(
-                    document_id=doc.document_id,
-                    file_name=doc.file_name,
-                    resolved_type=step.resolved_type,
-                    resolved_source_account_code=None,
-                    resolved_account_name=None,
-                    type_reason=step.type_reason,
-                    source_account_reason=step.source_account_reason,
-                    run_classifier=step.run_classifier,
-                    status="needs_review",
-                    error=(
-                        step.source_account_reason
-                        or "Could not match a source account from this document"
-                    ),
-                )
-            )
+            yield {
+                "event": "parsed",
+                "file_name": file_name,
+                "index": i + 1,
+                "total": total_planned,
+                "status": "needs_review",
+            }
             continue
 
         if step.run_classifier:
             any_classifier_requested = True
 
         try:
-            await parse_service.parse_document(db, doc_id)
+            txn_count = await parse_service.parse_document(db, doc_id)
             parsed += 1
-            step_results.append(
-                OrchestrationStepResult(
-                    document_id=doc_id,
-                    file_name=file_name,
-                    resolved_type=step.resolved_type,
-                    resolved_source_account_code=resolved_code,
-                    resolved_account_name=resolved_account_name,
-                    type_reason=step.type_reason,
-                    source_account_reason=step.source_account_reason,
-                    run_classifier=step.run_classifier,
-                    status="complete",
-                )
-            )
+            yield {
+                "event": "parsed",
+                "file_name": file_name,
+                "index": i + 1,
+                "total": total_planned,
+                "status": "complete",
+                "txn_count": txn_count,
+            }
         except ParseError as exc:
             logger.warning(
                 "ParseError parsing document %s (%s) as %s: %s",
@@ -314,20 +320,13 @@ async def orchestrate_parse(
                 exc,
             )
             failed += 1
-            step_results.append(
-                OrchestrationStepResult(
-                    document_id=doc_id,
-                    file_name=file_name,
-                    resolved_type=step.resolved_type,
-                    resolved_source_account_code=resolved_code,
-                    resolved_account_name=resolved_account_name,
-                    type_reason=step.type_reason,
-                    source_account_reason=step.source_account_reason,
-                    run_classifier=step.run_classifier,
-                    status="failed",
-                    error=str(exc),
-                )
-            )
+            yield {
+                "event": "parsed",
+                "file_name": file_name,
+                "index": i + 1,
+                "total": total_planned,
+                "status": "failed",
+            }
         except Exception as exc:
             logger.exception(
                 "Unexpected error parsing document %s (%s) as %s",
@@ -335,29 +334,22 @@ async def orchestrate_parse(
                 file_name,
                 step.resolved_type,
             )
-            # Roll back so the next step in this batch can still commit.
             try:
                 await db.rollback()
             except Exception:
                 logger.exception("Failed to roll back session after parse error for document %s", doc_id)
             failed += 1
-            step_results.append(
-                OrchestrationStepResult(
-                    document_id=doc_id,
-                    file_name=file_name,
-                    resolved_type=step.resolved_type,
-                    resolved_source_account_code=resolved_code,
-                    resolved_account_name=resolved_account_name,
-                    type_reason=step.type_reason,
-                    source_account_reason=step.source_account_reason,
-                    run_classifier=step.run_classifier,
-                    status="failed",
-                    error=f"Unexpected error: {exc}",
-                )
-            )
+            yield {
+                "event": "parsed",
+                "file_name": file_name,
+                "index": i + 1,
+                "total": total_planned,
+                "status": "failed",
+            }
 
     classifier_updated = 0
     if any_classifier_requested and parsed > 0:
+        yield {"event": "classifying"}
         try:
             classifier_updated = await classify_service.classify_period(db, period_id)
             logger.info(
@@ -370,12 +362,34 @@ async def orchestrate_parse(
                 "Classifier failed after orchestration for period %s — continuing", period_id
             )
 
+    yield {
+        "event": "complete",
+        "parsed": parsed,
+        "failed": failed,
+        "needs_review": needs_review,
+        "classifier_ran": any_classifier_requested and parsed > 0,
+        "classifier_updated": classifier_updated,
+    }
+
+
+async def orchestrate_parse(
+    db: AsyncSession,
+    period_id: uuid.UUID,
+) -> OrchestrationResult:
+    """Non-streaming wrapper around orchestrate_parse_stream.
+
+    Runs the generator to completion and returns the final OrchestrationResult.
+    Any exception raised inside the generator propagates to the caller.
+    """
+    complete_event: dict = {}
+    async for event in orchestrate_parse_stream(db, period_id):
+        if event["event"] == "complete":
+            complete_event = event
     return OrchestrationResult(
         period_id=period_id,
-        parsed=parsed,
-        failed=failed,
-        needs_review=needs_review,
-        classifier_ran=any_classifier_requested and parsed > 0,
-        classifier_updated=classifier_updated,
-        steps=step_results,
+        parsed=complete_event.get("parsed", 0),
+        failed=complete_event.get("failed", 0),
+        needs_review=complete_event.get("needs_review", 0),
+        classifier_ran=complete_event.get("classifier_ran", False),
+        classifier_updated=complete_event.get("classifier_updated", 0),
     )

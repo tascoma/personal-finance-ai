@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.account import Account
 from app.models.journal import JournalEntry, JournalLine
 from app.models.period import Period
+from app.services.statements import OCI_ACCOUNT_CODES
 
 _ZERO = Decimal("0")
 
@@ -85,6 +86,7 @@ class DashboardData:
     retirement_contributions: Decimal
     compensation_income: Decimal
     lifestyle_expenses: Decimal
+    oci: Decimal
     period_bars: list[PeriodBar]
     net_worth_series: list[NetWorthPoint]
     top_expense_categories: list[ExpenseCategory]
@@ -107,11 +109,14 @@ def _sum_by_type(
     lines: list[JournalLine],
     accounts: dict[int, Account],
     account_type: str,
+    exclude_codes: frozenset[int] = frozenset(),
 ) -> Decimal:
     total = _ZERO
     for line in lines:
         acct = accounts.get(line.account_code)
         if acct is None or acct.account_type != account_type or acct.is_memo:
+            continue
+        if line.account_code in exclude_codes:
             continue
         # Income accounts always contribute credit − debit regardless of normal_balance,
         # so that contra-income accounts (e.g. Capital Losses, debit-normal) correctly
@@ -232,9 +237,13 @@ async def compute_dashboard(
 
     # Income/Expense must exclude closing entries — closing entries zero out those
     # accounts by reversing them into equity, so including them cancels everything to zero.
-    total_income = _sum_by_type(lines_operating, accounts, "Income")
+    total_income = _sum_by_type(lines_operating, accounts, "Income", exclude_codes=OCI_ACCOUNT_CODES)
     total_expenses = _sum_by_type(lines_operating, accounts, "Expense")
     net_income = total_income - total_expenses
+    oci = sum(
+        (line.credit_amount - line.debit_amount for line in lines_operating if line.account_code in OCI_ACCOUNT_CODES),
+        _ZERO,
+    )
     total_assets = _sum_by_type(lines_bs_all, accounts, "Asset")
     total_liabilities = _sum_by_type(lines_bs_all, accounts, "Liability")
     net_worth = total_assets - total_liabilities
@@ -281,13 +290,17 @@ async def compute_dashboard(
         _ZERO,
     )
 
-    # YTD per-account retirement contributions, scoped to the calendar year of the
-    # most recent closed period (matches the existing YTD-growth pattern on the
-    # frontend). Independent of the user's period filter so the contribution
-    # progress bars always reflect the current year.
-    ytd_year: Optional[int] = (
-        max(p.period_start.year for p in all_closed_periods) if all_closed_periods else None
-    )
+    # YTD per-account retirement contributions. When the caller scopes to a
+    # calendar year (the `year` filter the iOS dashboard uses), the progress bars
+    # follow that year so every visualization honours the same scope. Otherwise
+    # (web from/to range or no filter) they default to the most recent closed
+    # year, matching the existing YTD-growth pattern on the frontend.
+    if year is not None:
+        ytd_year: Optional[int] = year
+    elif all_closed_periods:
+        ytd_year = max(p.period_start.year for p in all_closed_periods)
+    else:
+        ytd_year = None
     ytd_contribs_by_code: dict[int, Decimal] = defaultdict(lambda: _ZERO)
     if ytd_year is not None:
         ytd_period_ids = {p.period_id for p in all_closed_periods if p.period_start.year == ytd_year}
@@ -361,7 +374,7 @@ async def compute_dashboard(
             continue
 
         p_op_lines = lines_operating_by_period.get(p.period_id, [])
-        p_income = _sum_by_type(p_op_lines, accounts, "Income")
+        p_income = _sum_by_type(p_op_lines, accounts, "Income", exclude_codes=OCI_ACCOUNT_CODES)
         p_expenses = _sum_by_type(p_op_lines, accounts, "Expense")
         label = p.period_start.strftime("%b %Y")
         period_bars.append(PeriodBar(
@@ -456,6 +469,7 @@ async def compute_dashboard(
         retirement_contributions=retirement_contributions,
         compensation_income=compensation_income,
         lifestyle_expenses=lifestyle_expenses,
+        oci=oci,
         period_bars=period_bars,
         net_worth_series=net_worth_series,
         top_expense_categories=top_expense_categories,

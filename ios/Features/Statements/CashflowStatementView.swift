@@ -11,16 +11,16 @@ struct CashflowStatementView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Operating Activities")
                     .font(.headline)
+                    .foregroundStyle(Color.appTextPrimary)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Starting point")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .eyebrow()
                     StatementLineRow(name: "Net income", amount: response.netIncome)
                 }
-                .padding(12)
+                .padding(Space.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
+                .appCardStyle()
 
                 if !response.noncashAdjustments.isEmpty {
                     StatementLinesBlock(
@@ -61,12 +61,12 @@ struct CashflowStatementView: View {
         VStack(spacing: 6) {
             summaryRow("Beginning cash", response.beginningCash)
             summaryRow("Net change", response.netChangeInCash, color: response.netChangeInCash >= 0 ? .appGreen : .appRed)
-            Divider()
+            Rectangle().fill(Color.appLine).frame(height: 1)
             summaryRow("Ending cash", response.endingCash, color: .appAccent, bold: true)
         }
-        .padding(12)
+        .padding(Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
+        .appCardStyle()
     }
 
     private func summaryRow(_ label: String, _ value: Decimal, color: Color = .primary, bold: Bool = false) -> some View {
@@ -83,7 +83,7 @@ struct CashflowStatementView: View {
 
     private func section(_ title: String, lines: [StatementLine], total: Decimal) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.headline)
+            Text(title).font(.headline).foregroundStyle(Color.appTextPrimary)
             StatementLinesBlock(
                 header: title.replacingOccurrences(of: " Activities", with: " flows"),
                 lines: lines,
@@ -97,19 +97,18 @@ struct CashflowStatementView: View {
     private var reconciliationCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Cash by Account")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .eyebrow()
                 .padding(.bottom, 2)
             if response.cashByAccount.isEmpty {
-                Text("—").foregroundStyle(.secondary).font(.footnote)
+                Text("—").foregroundStyle(Color.appTextTertiary).font(.footnote)
             } else {
                 ForEach(response.cashByAccount) { line in
                     StatementLineRow(name: line.accountName, amount: line.amount)
                 }
             }
         }
-        .padding(12)
+        .padding(Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
+        .appCardStyle()
     }
 }

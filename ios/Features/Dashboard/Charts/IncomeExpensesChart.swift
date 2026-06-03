@@ -9,13 +9,9 @@ struct IncomeExpensesChart: View {
         case expenses = "Expenses"
     }
 
-    private var recentBars: [PeriodBarPoint] {
-        Array(bars.suffix(3))
-    }
-
     var body: some View {
         Chart {
-            ForEach(recentBars) { bar in
+            ForEach(bars) { bar in
                 BarMark(
                     x: .value("Period", bar.periodLabel),
                     y: .value("Amount", bar.income.asDouble)
@@ -36,7 +32,7 @@ struct IncomeExpensesChart: View {
             Series.expenses: Color.appRed,
         ])
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 3)) { value in
+            AxisMarks(values: .automatic(desiredCount: 4)) { value in
                 AxisGridLine()
                 AxisValueLabel {
                     if let label = value.as(String.self) {

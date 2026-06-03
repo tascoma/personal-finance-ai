@@ -257,11 +257,95 @@ async def create_unrealized_gl_entry(
     )
 
 
+async def post_unrealized_gl_targeted(
+    db: AsyncSession,
+    period_id: uuid.UUID,
+    account_code: int,
+) -> None:
+    """Post unrealized G/L and close the reconciliation gap in one commit.
+
+    Replaces the create_unrealized_gl_entry + run_reconciliation pair for the
+    common case of resolving a single investment account gap:
+    - Builds the journal entry and lines without committing.
+    - Directly patches the one affected Reconciliation row.
+    - Issues a single db.commit() (vs. two round trips in the old path).
+    """
+    acct = await db.get(Account, account_code)
+    if acct is None:
+        raise ReconciliationError(f"Account {account_code} not found")
+    if acct.sub_category not in _INVESTMENT_SUBCATEGORIES:
+        raise ReconciliationError(
+            f"Account {account_code} ({acct.sub_category!r}) is not an investment account"
+        )
+
+    gl_acct = await db.get(Account, UNREALIZED_GL_ACCOUNT)
+    if gl_acct is None:
+        raise ReconciliationError(
+            f"Unrealized G/L account {UNREALIZED_GL_ACCOUNT} not found in Chart of Accounts"
+        )
+
+    period = await db.get(Period, period_id)
+    if period is None:
+        raise ReconciliationError(f"Period {period_id} not found")
+
+    recon_row = await db.scalar(
+        select(Reconciliation).where(
+            Reconciliation.period_id == period_id,
+            Reconciliation.account_code == account_code,
+        )
+    )
+    if recon_row is None:
+        raise ReconciliationError(
+            f"No reconciliation row found for account {account_code} in this period — "
+            "run reconciliation first"
+        )
+
+    gap = recon_row.gap
+    if gap == _ZERO:
+        raise ReconciliationError("Gap is zero; no adjusting entry needed")
+
+    abs_gap = abs(gap)
+    if gap > _ZERO:
+        memo = "Unrealized market gain"
+        debit_code, credit_code = account_code, UNREALIZED_GL_ACCOUNT
+    else:
+        memo = "Unrealized market loss"
+        debit_code, credit_code = UNREALIZED_GL_ACCOUNT, account_code
+
+    eid = uuid.uuid4()
+    db.add(JournalEntry(
+        entry_id=eid,
+        period_id=period_id,
+        entry_date=period.period_end,
+        description="Unrealized market gain/loss adjustment",
+        source_type="adjusting",
+        is_adjusting=True,
+        is_closing=False,
+        created_by="user",
+    ))
+    db.add(JournalLine(entry_id=eid, account_code=debit_code, debit_amount=abs_gap, credit_amount=_ZERO, memo=memo))
+    db.add(JournalLine(entry_id=eid, account_code=credit_code, debit_amount=_ZERO, credit_amount=abs_gap, memo=memo))
+
+    # The entry is sized to close the gap exactly, so computed balance → stated balance.
+    recon_row.computed_balance = recon_row.stated_balance
+    recon_row.status = "reconciled"
+
+    await db.commit()
+    logger.info(
+        "Posted unrealized G/L entry for account %d, gap=%s, period=%s",
+        account_code, gap, period_id,
+    )
+
+
 async def _fetch_temp_account_totals(
     db: AsyncSession,
     period_id: uuid.UUID,
 ) -> list[tuple[Account, Decimal, Decimal]]:
-    """Return (account, debit_sum, credit_sum) for Income/Expense accounts with period activity."""
+    """Return (account, debit_sum, credit_sum) for Income/Expense accounts with period activity.
+
+    Closing entries are excluded so the preview always shows the pre-closing
+    operating balances regardless of whether closing has been posted.
+    """
     rows = (await db.execute(
         select(
             Account,
@@ -272,6 +356,7 @@ async def _fetch_temp_account_totals(
         .join(JournalEntry, JournalLine.entry_id == JournalEntry.entry_id)
         .where(
             JournalEntry.period_id == period_id,
+            JournalEntry.is_closing.is_(False),
             Account.account_type.in_(["Income", "Expense"]),
             Account.is_memo.is_(False),
             Account.is_active.is_(True),
@@ -453,6 +538,17 @@ async def compute_equity_rollup_preview(
 
     The rollup entry moves the net income balance from 300103 to 300102.
     """
+    # Exclude the equity rollup entry (identified by touching NET_WORTH_ACCOUNT) so that
+    # the Income Summary preview balance reflects the net income even after rollup is posted.
+    rollup_entry_ids = (
+        select(JournalLine.entry_id)
+        .join(JournalEntry, JournalLine.entry_id == JournalEntry.entry_id)
+        .where(
+            JournalEntry.period_id == period.period_id,
+            JournalLine.account_code == NET_WORTH_ACCOUNT,
+        )
+        .scalar_subquery()
+    )
     row = (await db.execute(
         select(
             func.sum(JournalLine.debit_amount).label("debit_sum"),
@@ -462,6 +558,7 @@ async def compute_equity_rollup_preview(
         .where(
             JournalEntry.period_id == period.period_id,
             JournalLine.account_code == NET_INCOME_ACCOUNT,
+            JournalLine.entry_id.not_in(rollup_entry_ids),
         )
     )).first()
     debit_sum = (row.debit_sum or _ZERO) if row else _ZERO

@@ -93,10 +93,10 @@ async def get_period(db: AsyncSession, period_id: uuid.UUID) -> Period | None:
 
 
 async def get_current_open_period(db: AsyncSession) -> Period | None:
-    """Most recent period in `open` status — the one the user is actively working on."""
+    """Most recent in-progress period (any non-closed status)."""
     return await db.scalar(
         select(Period)
-        .where(Period.status == "open")
+        .where(Period.status != "closed")
         .order_by(Period.period_start.desc())
         .limit(1)
     )

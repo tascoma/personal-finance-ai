@@ -24,8 +24,9 @@ struct Endpoint {
     static let me = Endpoint(method: "GET", path: "/auth/me", requiresAuth: true)
     static let periods = Endpoint(method: "GET", path: "/periods", requiresAuth: true)
 
-    static func dashboard(fromPeriodId: UUID? = nil, toPeriodId: UUID? = nil) -> Endpoint {
+    static func dashboard(year: Int? = nil, fromPeriodId: UUID? = nil, toPeriodId: UUID? = nil) -> Endpoint {
         var query: [String] = []
+        if let year { query.append("year=\(year)") }
         if let from = fromPeriodId { query.append("from_period_id=\(from.uuidString.lowercased())") }
         if let to = toPeriodId { query.append("to_period_id=\(to.uuidString.lowercased())") }
         let suffix = query.isEmpty ? "" : "?\(query.joined(separator: "&"))"

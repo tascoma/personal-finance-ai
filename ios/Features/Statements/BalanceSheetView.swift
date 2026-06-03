@@ -38,9 +38,9 @@ struct BalanceSheetView: View {
             let diff = totalAssets - totalLiabAndEquity
             balanceRow("Imbalance", diff, color: diff == 0 ? .appGreen : .appRed)
         }
-        .padding(12)
+        .padding(Space.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
+        .appCardStyle()
     }
 
     private func balanceRow(_ label: String, _ value: Decimal, color: Color) -> some View {
@@ -64,27 +64,27 @@ struct BalanceSheetView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.headline)
+                .foregroundStyle(Color.appTextPrimary)
 
             ForEach(sections) { section in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(section.label)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .eyebrow()
                     ForEach(section.rows) { row in
                         StatementLineRow(name: row.accountName, amount: row.amount(at: columnIndex))
                     }
                     let subtotal = section.subtotal(at: columnIndex)
                     if section.rows.count > 1 || subtotal != 0 {
-                        Divider()
+                        Rectangle().fill(Color.appLine).frame(height: 1)
                         StatementSubtotalRow(
                             label: "Subtotal — \(section.label.lowercased())",
                             amount: subtotal
                         )
                     }
                 }
-                .padding(12)
+                .padding(Space.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.appCard, in: RoundedRectangle(cornerRadius: 10))
+                .appCardStyle()
             }
 
             HStack {

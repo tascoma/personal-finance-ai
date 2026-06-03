@@ -10,10 +10,12 @@ interface Props {
 
 export default function Layout({ children, activePeriod }: Props) {
   return (
-    <>
+    <div className="app">
       <AppHeader activePeriod={activePeriod} />
       <Sidebar />
-      <main className="main">{children}</main>
-    </>
+      <main className="main">
+        {children}
+      </main>
+    </div>
   )
 }

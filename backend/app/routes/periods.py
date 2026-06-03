@@ -1,8 +1,10 @@
+import json
 import logging
 import uuid
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -234,6 +236,22 @@ async def orchestrate_parse_documents(
     return result
 
 
+@router.post("/periods/{period_id}/orchestrate-parse/stream")
+async def orchestrate_parse_stream(
+    period_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+) -> StreamingResponse:
+    """SSE endpoint that streams orchestration progress as newline-delimited JSON events."""
+    async def event_generator() -> object:
+        try:
+            async for event in orchestrate_service.orchestrate_parse_stream(db, period_id):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception:
+            logger.exception("Error in orchestration stream for period %s", period_id)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 @router.post("/periods/{period_id}/balances", response_model=OperationResult)
 async def upsert_balances(
     period_id: uuid.UUID,
@@ -244,13 +262,17 @@ async def upsert_balances(
         acct.account_code
         for acct in await stated_balance_service.list_balance_accounts(db)
     }
+    batch: dict[int, Decimal] = {}
     for item in body:
         if item.account_code not in valid_codes:
             continue
         try:
-            value = Decimal(item.stated_balance)
+            batch[item.account_code] = Decimal(item.stated_balance)
         except InvalidOperation:
             raise HTTPException(status_code=400, detail=f"Invalid balance for account {item.account_code}")
-        await stated_balance_service.upsert_balance(db, period_id, item.account_code, value)
-    logger.info("Upserted %d balance(s) for period %s", len(body), period_id)
+    try:
+        count = await stated_balance_service.upsert_balances_batch(db, period_id, batch)
+    except stated_balance_service.BalanceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    logger.info("Upserted %d balance(s) for period %s", count, period_id)
     return OperationResult(ok=True)

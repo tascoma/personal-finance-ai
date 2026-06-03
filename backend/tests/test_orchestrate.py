@@ -219,7 +219,6 @@ async def test_orchestrate_parses_all_pending_documents(
     assert result.parsed == 2
     assert result.failed == 0
     assert result.classifier_ran is True
-    assert len(result.steps) == 2
 
     async with session_factory() as session:
         rows = (await session.scalars(select(RawTransaction))).all()
@@ -258,8 +257,6 @@ async def test_orchestrate_corrects_wrong_document_type(
         result = await orchestrate_service.orchestrate_parse(session, open_period.period_id)
 
     assert result.parsed == 1
-    assert result.steps[0].resolved_type == "bank_statement"
-    assert result.steps[0].resolved_source_account_code == 100101
 
     async with session_factory() as session:
         doc = await session.get(Document, mislabeled_csv_doc.document_id)
@@ -386,9 +383,6 @@ async def test_orchestrate_one_failure_does_not_block_others(
 
     assert result.parsed == 1
     assert result.failed == 1
-    statuses = {s.document_id: s.status for s in result.steps}
-    assert statuses[csv_bank_doc.document_id] == "complete"
-    assert statuses[bad.document_id] == "failed"
 
 
 @pytest.mark.asyncio
@@ -421,10 +415,6 @@ async def test_orchestrate_unresolved_source_account_is_needs_review(
     assert result.failed == 0
     assert result.needs_review == 1
     assert result.classifier_ran is False
-    assert len(result.steps) == 1
-    step = result.steps[0]
-    assert step.status == "needs_review"
-    assert step.resolved_source_account_code is None
     classifier_mock.assert_not_awaited()
 
     async with session_factory() as session:
@@ -476,8 +466,6 @@ async def test_route_returns_orchestration_result(
     body = response.json()
     assert body["parsed"] == 1
     assert body["failed"] == 0
-    assert len(body["steps"]) == 1
-    assert body["steps"][0]["status"] == "complete"
 
 
 @pytest.mark.asyncio

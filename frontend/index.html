@@ -10,10 +10,12 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <meta name="theme-color" content="#05080f" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <script>
     (function () {
-      var saved = localStorage.getItem('pf-theme');
+      var saved = localStorage.getItem('fa-theme');
+      if (!saved) saved = localStorage.getItem('pf-theme'); /* migrate old key */
       if (saved === 'light') {
         document.documentElement.setAttribute('data-theme', 'light');
       } else {

@@ -1,3 +1,30 @@
+// ── Orchestration streaming events ─────────────────────────────────
+
+export type OrchestrationEventKind =
+  | 'planning'
+  | 'planned'
+  | 'parsing'
+  | 'parsed'
+  | 'classifying'
+  | 'complete'
+  | 'error'
+
+export interface OrchestrationEvent {
+  event: OrchestrationEventKind
+  doc_count?: number
+  file_name?: string
+  index?: number
+  total?: number
+  status?: 'complete' | 'failed' | 'needs_review'
+  txn_count?: number
+  parsed?: number
+  failed?: number
+  needs_review?: number
+  classifier_ran?: boolean
+  classifier_updated?: number
+  message?: string
+}
+
 // ── Core domain types ──────────────────────────────────────────────
 
 export type PeriodStatus = 'open' | 'pending_review' | 'pending_close' | 'closed'
@@ -179,6 +206,7 @@ export interface DashboardResponse {
   retirement_contributions: string
   compensation_income: string
   lifestyle_expenses: string
+  oci: string
   liquid_assets: string
   liquid_assets_prev: string
   tax_advantaged: string

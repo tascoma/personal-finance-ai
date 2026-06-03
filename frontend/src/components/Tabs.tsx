@@ -16,12 +16,12 @@ export default function Tabs({ tabs, active, onChange }: Props) {
       {tabs.map((t) => (
         <button
           key={t.key}
-          className={`tab-btn${active === t.key ? ' tab-btn--active' : ''}`}
+          className={`tab${active === t.key ? ' active' : ''}`}
           onClick={() => onChange(t.key)}
         >
           {t.label}
           {t.count !== undefined && (
-            <span style={{ marginLeft: 5, opacity: 0.6, fontFamily: 'DM Mono, monospace', fontSize: 11 }}>
+            <span className="mono muted" style={{ marginLeft: 5, fontSize: 11 }}>
               {t.count}
             </span>
           )}

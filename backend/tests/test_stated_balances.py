@@ -152,10 +152,36 @@ async def test_upsert_updates_existing_balance(session_factory, open_period):
 
 
 @pytest.mark.asyncio
-async def test_upsert_blocked_on_non_open_period(session_factory, open_period):
+async def test_upsert_allowed_on_pending_close_period(session_factory, open_period):
     async with session_factory() as session:
         await period_service.update_status(
             session, open_period.period_id, "pending_review"
+        )
+        await period_service.update_status(
+            session, open_period.period_id, "pending_close"
+        )
+
+    async with session_factory() as session:
+        balance = await stated_balance_service.upsert_balance(
+            session,
+            period_id=open_period.period_id,
+            account_code=100101,
+            stated_balance=Decimal("1.00"),
+        )
+    assert balance.stated_balance == Decimal("1.00")
+
+
+@pytest.mark.asyncio
+async def test_upsert_blocked_on_closed_period(session_factory, open_period):
+    async with session_factory() as session:
+        await period_service.update_status(
+            session, open_period.period_id, "pending_review"
+        )
+        await period_service.update_status(
+            session, open_period.period_id, "pending_close"
+        )
+        await period_service.update_status(
+            session, open_period.period_id, "closed"
         )
 
     async with session_factory() as session:
