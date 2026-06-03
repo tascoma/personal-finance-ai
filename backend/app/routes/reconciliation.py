@@ -185,21 +185,11 @@ async def post_unrealized_gl(
     body: UnrealizedGlRequest,
     db: AsyncSession = Depends(get_db_session),
 ) -> ReconcilePageResponse:
-    recon_rows = await db.scalars(
-        select(Reconciliation).where(
-            Reconciliation.period_id == period_id,
-            Reconciliation.account_code == body.account_code,
-        )
-    )
-    row = next(iter(recon_rows.all()), None)
-    if row is None:
-        raise HTTPException(status_code=404, detail="No reconciliation row found for this account")
     try:
-        await recon_service.create_unrealized_gl_entry(db, period_id, body.account_code, row.gap)
-        _, balances = await recon_service.run_reconciliation(db, period_id)
+        await recon_service.post_unrealized_gl_targeted(db, period_id, body.account_code)
     except recon_service.ReconciliationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return await _build_page(db, period_id, balances=balances)
+    return await _build_page(db, period_id)
 
 
 @router.post("/periods/{period_id}/reconcile/post-closing", response_model=ReconcilePageResponse)
