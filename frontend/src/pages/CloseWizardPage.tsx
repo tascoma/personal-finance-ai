@@ -1,12 +1,12 @@
 import { useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchPeriodDetail, updatePeriodStatus } from '../api/periods'
+import { fetchPeriodDetail, updatePeriodStatus, saveBalances } from '../api/periods'
 import { orchestrateParseStream } from '../api/periods'
-import { fetchJournalPage, classifyTransactions, postTransactions } from '../api/journal'
-import type { OrchestrationEvent } from '../types'
+import { fetchJournalPage, classifyTransactions, postTransactions, createManualJournalEntry } from '../api/journal'
+import type { OrchestrationEvent, ManualJournalEntryCreate } from '../types'
 import { approveAllStaged, approveTransaction, updateTransactionAccount, rejectTransaction } from '../api/transactions'
-import { fetchReconcilePage, runReconciliation, postClosingEntries, postEquityRollup } from '../api/reconciliation'
+import { fetchReconcilePage, runReconciliation, postUnrealizedGl, postClosingEntries, postEquityRollup } from '../api/reconciliation'
 import Layout from '../components/Layout'
 import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
@@ -24,6 +24,8 @@ const WIZARD_STEPS = [
 ]
 
 type ParseLogEntry = { label: string; detail?: string; status: 'running' | 'done' | 'error' | 'warn' }
+type LineDraft = { account_code: string; debit: string; credit: string; memo: string }
+const blankLine = (): LineDraft => ({ account_code: '', debit: '', credit: '', memo: '' })
 
 function handleEvent(
   ev: OrchestrationEvent,
@@ -72,6 +74,13 @@ export default function CloseWizardPage() {
   const qc = useQueryClient()
   const [step, setStep] = useState(0)
   const [completed, setCompleted] = useState<Record<number, boolean>>({})
+  const [balanceValues, setBalanceValues] = useState<Record<number, string>>({})
+  const [reconError, setReconError] = useState<string | null>(null)
+  const [showEntryForm, setShowEntryForm] = useState(false)
+  const [entryDate, setEntryDate] = useState('')
+  const [entryDesc, setEntryDesc] = useState('')
+  const [entryLines, setEntryLines] = useState<LineDraft[]>([blankLine(), blankLine()])
+  const [entryError, setEntryError] = useState<string | null>(null)
 
   const invalidatePeriod = () => qc.invalidateQueries({ queryKey: ['period', periodId] })
 
@@ -208,22 +217,78 @@ export default function CloseWizardPage() {
       if (ctx?.prev) qc.setQueryData(['journal', periodId], ctx.prev)
     },
   })
+  const saveBalancesMut = useMutation({
+    mutationFn: () => saveBalances(
+      periodId!,
+      (periodData?.balance_accounts ?? []).map(a => ({
+        account_code: a.account_code,
+        stated_balance: balanceValues[a.account_code] ?? (periodData?.stated_balances[a.account_code] ?? '0'),
+      })),
+    ),
+  })
   const runRecon = useMutation({
     mutationFn: () => runReconciliation(periodId!),
-    onSuccess: (d) => qc.setQueryData(['reconcile', periodId], d),
+    onSuccess: (d) => { setReconError(null); qc.setQueryData(['reconcile', periodId], d) },
+    onError: (e: Error) => setReconError(e.message),
+  })
+  const postUnrealized = useMutation({
+    mutationFn: (code: number) => postUnrealizedGl(periodId!, code),
+    onSuccess: (d) => { setReconError(null); qc.setQueryData(['reconcile', periodId], d) },
+    onError: (e: Error) => setReconError(e.message),
   })
   const postClosing = useMutation({
-    mutationFn: () => postClosingEntries(periodId!),
-    onSuccess: (d) => qc.setQueryData(['reconcile', periodId], d),
-  })
-  const postEquity = useMutation({
-    mutationFn: () => postEquityRollup(periodId!),
+    mutationFn: async () => {
+      await postClosingEntries(periodId!)
+      return postEquityRollup(periodId!)
+    },
     onSuccess: (d) => qc.setQueryData(['reconcile', periodId], d),
   })
   const closePeriod = useMutation({
     mutationFn: () => updatePeriodStatus(periodId!, 'closed'),
     onSuccess: () => { invalidatePeriod(); setCompleted((c) => ({ ...c, 5: true })) },
   })
+
+  const addEntry = useMutation({
+    mutationFn: (body: ManualJournalEntryCreate) => createManualJournalEntry(periodId!, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['journal', periodId] })
+      setShowEntryForm(false)
+      setEntryDate('')
+      setEntryDesc('')
+      setEntryLines([blankLine(), blankLine()])
+      setEntryError(null)
+    },
+    onError: (e: Error) => setEntryError(e.message),
+  })
+
+  function handleSubmitEntry() {
+    if (!entryDate || !entryDesc.trim()) {
+      setEntryError('Date and description are required')
+      return
+    }
+    if (entryLines.some(l => !l.account_code)) {
+      setEntryError('All lines must have an account selected')
+      return
+    }
+    const totalDebit = entryLines.reduce((s, l) => s + parseFloat(l.debit || '0'), 0)
+    const totalCredit = entryLines.reduce((s, l) => s + parseFloat(l.credit || '0'), 0)
+    if (Math.abs(totalDebit - totalCredit) > 0.005) {
+      setEntryError(`Not balanced: debits $${totalDebit.toFixed(2)} ≠ credits $${totalCredit.toFixed(2)}`)
+      return
+    }
+    setEntryError(null)
+    addEntry.mutate({
+      entry_date: entryDate,
+      description: entryDesc.trim(),
+      source_type: 'manual',
+      lines: entryLines.map(l => ({
+        account_code: parseInt(l.account_code),
+        debit: l.debit || '0',
+        credit: l.credit || '0',
+        memo: l.memo.trim() || undefined,
+      })),
+    })
+  }
 
   function advance() {
     setCompleted((c) => ({ ...c, [step]: true }))
@@ -453,13 +518,157 @@ export default function CloseWizardPage() {
                         : 'Loading…'}
                     </div>
                   </div>
-                  {journalData && journalData.approved.length > 0 && (
-                    <button className="btn btn-secondary btn-sm" disabled={postTxns.isPending} onClick={() => postTxns.mutate()}>
-                      <SvgIcon name="sparkles" size={13} />{postTxns.isPending ? 'Posting…' : 'Post transactions'}
-                    </button>
-                  )}
+                  <div className="row gap-2">
+                    {journalData && journalData.approved.length > 0 && (
+                      <button className="btn btn-secondary btn-sm" disabled={postTxns.isPending} onClick={() => postTxns.mutate()}>
+                        <SvgIcon name="sparkles" size={13} />{postTxns.isPending ? 'Posting…' : 'Post transactions'}
+                      </button>
+                    )}
+                    {journalData && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          setShowEntryForm(true)
+                          if (!entryDate) setEntryDate(period.period_end)
+                          setEntryError(null)
+                        }}
+                      >
+                        <SvgIcon name="plus" size={13} />Add entry
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="wizard-body-bd">
+                  {showEntryForm && journalData && (
+                    <div className="card mb-4">
+                      <div className="card-hd spread">
+                        <div className="card-title">New manual entry</div>
+                        <button
+                          className="icon-btn"
+                          style={{ color: 'var(--text-3)' }}
+                          onClick={() => { setShowEntryForm(false); setEntryError(null) }}
+                          onMouseEnter={e => (e.currentTarget.style.color = 'var(--text)')}
+                          onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-3)')}
+                        >
+                          <SvgIcon name="x" size={15} />
+                        </button>
+                      </div>
+                      <div className="card-bd stack gap-4">
+                        <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 12 }}>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-3)', marginBottom: 4 }}>Date</div>
+                            <input className="inp" type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-3)', marginBottom: 4 }}>Description</div>
+                            <input className="inp" type="text" value={entryDesc} onChange={e => setEntryDesc(e.target.value)} placeholder="e.g. Cash purchase — office supplies" />
+                          </div>
+                        </div>
+                        <div className="tbl-scroll">
+                          <table className="tbl">
+                            <thead>
+                              <tr>
+                                <th>Account</th>
+                                <th className="text-right" style={{ width: 110 }}>Debit</th>
+                                <th className="text-right" style={{ width: 110 }}>Credit</th>
+                                <th style={{ width: 160 }}>Memo</th>
+                                <th style={{ width: 32 }} />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {entryLines.map((line, i) => (
+                                <tr key={i}>
+                                  <td>
+                                    <select
+                                      className="inp inp--sm"
+                                      style={{ minWidth: 200 }}
+                                      value={line.account_code}
+                                      onChange={e => setEntryLines(prev => prev.map((l, j) => j === i ? { ...l, account_code: e.target.value } : l))}
+                                    >
+                                      <option value="">— pick account —</option>
+                                      {journalData.accounts.map(a => (
+                                        <option key={a.account_code} value={a.account_code}>{a.account_code} · {a.account_name}</option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td>
+                                    <input
+                                      className="inp inp--sm mono"
+                                      style={{ width: '100%', textAlign: 'right' }}
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      placeholder="0.00"
+                                      value={line.debit}
+                                      onChange={e => setEntryLines(prev => prev.map((l, j) => j === i ? { ...l, debit: e.target.value } : l))}
+                                    />
+                                  </td>
+                                  <td>
+                                    <input
+                                      className="inp inp--sm mono"
+                                      style={{ width: '100%', textAlign: 'right' }}
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      placeholder="0.00"
+                                      value={line.credit}
+                                      onChange={e => setEntryLines(prev => prev.map((l, j) => j === i ? { ...l, credit: e.target.value } : l))}
+                                    />
+                                  </td>
+                                  <td>
+                                    <input
+                                      className="inp inp--sm"
+                                      style={{ width: '100%' }}
+                                      type="text"
+                                      placeholder="Optional"
+                                      value={line.memo}
+                                      onChange={e => setEntryLines(prev => prev.map((l, j) => j === i ? { ...l, memo: e.target.value } : l))}
+                                    />
+                                  </td>
+                                  <td>
+                                    {entryLines.length > 2 && (
+                                      <button
+                                        className="icon-btn"
+                                        style={{ color: 'var(--text-3)' }}
+                                        onClick={() => setEntryLines(prev => prev.filter((_, j) => j !== i))}
+                                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--red)')}
+                                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-3)')}
+                                      >
+                                        <SvgIcon name="trash" size={13} />
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr>
+                                <td>
+                                  <button className="btn btn-ghost btn-sm" onClick={() => setEntryLines(prev => [...prev, blankLine()])}>
+                                    <SvgIcon name="plus" size={12} /> Add line
+                                  </button>
+                                </td>
+                                <td className="mono text-right fw-600" style={{ fontSize: 13, color: 'var(--text)' }}>
+                                  {entryLines.reduce((s, l) => s + parseFloat(l.debit || '0'), 0).toFixed(2)}
+                                </td>
+                                <td className="mono text-right fw-600" style={{ fontSize: 13, color: 'var(--text)' }}>
+                                  {entryLines.reduce((s, l) => s + parseFloat(l.credit || '0'), 0).toFixed(2)}
+                                </td>
+                                <td colSpan={2} />
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                        {entryError && <p style={{ color: 'var(--red)', fontSize: 13, margin: 0 }}>{entryError}</p>}
+                        <div className="row gap-2" style={{ justifyContent: 'flex-end' }}>
+                          <button className="btn btn-ghost btn-sm" onClick={() => { setShowEntryForm(false); setEntryError(null) }}>Cancel</button>
+                          <button className="btn btn-primary btn-sm" disabled={addEntry.isPending} onClick={handleSubmitEntry}>
+                            {addEntry.isPending ? 'Saving…' : 'Save entry'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {journalData ? (
                     journalData.entries.length === 0 ? (
                       <p className="muted" style={{ padding: '16px 0' }}>No journal entries yet. Approve transactions and post them first.</p>
@@ -537,14 +746,28 @@ export default function CloseWizardPage() {
                           <div style={{ fontSize: 13, fontWeight: 500 }}>{a.account_name}</div>
                           <div className="muted mono" style={{ fontSize: 11.5 }}>{a.account_code} · {a.sub_category}</div>
                         </div>
-                        <input className="inp mono" style={{ width: 150, textAlign: 'right' }} type="number" step="0.01" defaultValue={periodData.stated_balances[a.account_code] ?? ''} placeholder="0.00" />
+                        <input
+                          className="inp mono"
+                          style={{ width: 150, textAlign: 'right' }}
+                          type="number"
+                          step="0.01"
+                          value={balanceValues[a.account_code] ?? (periodData.stated_balances[a.account_code] ?? '')}
+                          placeholder="0.00"
+                          onChange={(e) => setBalanceValues(prev => ({ ...prev, [a.account_code]: e.target.value }))}
+                        />
                       </div>
                     ))}
                   </div>
                 </div>
                 <div className="wizard-body-ft">
                   <span className="muted" style={{ fontSize: 12 }}>Balances used in reconciliation.</span>
-                  <button className="btn btn-primary" onClick={advance}>Run reconciliation <SvgIcon name="arrow" size={14} /></button>
+                  <button
+                    className="btn btn-primary"
+                    disabled={saveBalancesMut.isPending}
+                    onClick={async () => { await saveBalancesMut.mutateAsync(); advance() }}
+                  >
+                    {saveBalancesMut.isPending ? 'Saving…' : <>Save & continue <SvgIcon name="arrow" size={14} /></>}
+                  </button>
                 </div>
               </>
             )}
@@ -556,7 +779,7 @@ export default function CloseWizardPage() {
                   <div>
                     <div className="wizard-body-title">Reconciliation</div>
                     <div className="wizard-body-sub">
-                      {reconData ? `${reconData.details.filter(d => d.status !== 'reconciled').length} accounts have gaps.` : 'Run reconciliation to compare balances.'}
+                      {reconData?.ran ? `${reconData.details.filter(d => d.status !== 'reconciled').length} accounts have gaps.` : 'Run reconciliation to compare balances.'}
                     </div>
                   </div>
                   <button className="btn btn-secondary btn-sm" disabled={runRecon.isPending} onClick={() => runRecon.mutate()}>
@@ -564,7 +787,10 @@ export default function CloseWizardPage() {
                   </button>
                 </div>
                 <div className="wizard-body-bd" style={{ padding: 0 }}>
-                  {reconData?.details.map((r) => (
+                  {reconError && (
+                    <p style={{ padding: '12px 16px', color: 'var(--red)', fontSize: 13 }}>{reconError}</p>
+                  )}
+                  {reconData?.ran ? reconData.details.map((r) => (
                     <div key={r.recon_id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)', display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr 120px 100px', gap: 16, alignItems: 'center' }}>
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 500 }}>{r.account_name}</div>
@@ -573,10 +799,16 @@ export default function CloseWizardPage() {
                       <div><div className="muted" style={{ fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Computed</div><div className="mono">{parseFloat(r.computed_balance).toFixed(2)}</div></div>
                       <div><div className="muted" style={{ fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Stated</div><div className="mono">{parseFloat(r.stated_balance).toFixed(2)}</div></div>
                       <div><div className="muted" style={{ fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Gap</div><div className="mono fw-600" style={{ color: parseFloat(r.gap) === 0 ? 'var(--green)' : 'var(--amber)' }}>{parseFloat(r.gap) === 0 ? '$0.00' : `$${parseFloat(r.gap).toFixed(2)}`}</div></div>
-                      <div className="text-right">{parseFloat(r.gap) === 0 ? <StatusBadge status="reconciled" /> : <button className="btn btn-secondary btn-sm">Fix</button>}</div>
+                      <div className="text-right">
+                        {parseFloat(r.gap) === 0
+                          ? <StatusBadge status="reconciled" />
+                          : r.is_investment
+                            ? <button className="btn btn-secondary btn-sm" disabled={postUnrealized.isPending} onClick={() => postUnrealized.mutate(r.account_code)}>Post G/L</button>
+                            : <button className="btn btn-secondary btn-sm" disabled>Fix</button>
+                        }
+                      </div>
                     </div>
-                  ))}
-                  {!reconData && <p className="muted" style={{ padding: 16 }}>Click "Run reconciliation" to compare balances.</p>}
+                  )) : !reconError && <p className="muted" style={{ padding: 16 }}>Click "Run reconciliation" to compare balances.</p>}
                 </div>
                 <div className="wizard-body-ft">
                   <span className="muted" style={{ fontSize: 12 }}>You can post adjusting entries from the Reconcile tab.</span>
@@ -624,12 +856,60 @@ export default function CloseWizardPage() {
                             {postClosing.isPending ? 'Posting…' : 'Post closing entries'}
                           </button>
                         )}
-                        {reconData?.equity_preview && !reconData.equity_preview.rollup_posted && (
-                          <button className="btn btn-secondary btn-sm" disabled={postEquity.isPending} onClick={() => postEquity.mutate()}>
-                            {postEquity.isPending ? 'Posting…' : 'Post equity rollup'}
-                          </button>
-                        )}
                       </div>
+                      {reconData?.temp_preview && (
+                        <div className="stack gap-4">
+                          {/* Entry 1: close revenue accounts */}
+                          <ClosingEntryCard
+                            title="Close revenue accounts"
+                            posted={reconData.temp_preview.closing_posted}
+                            rows={[
+                              ...reconData.temp_preview.income_accounts.map(a => ({
+                                code: a.account_code,
+                                name: a.account_name,
+                                debit: a.period_balance,
+                                credit: '0',
+                              })),
+                              {
+                                code: null,
+                                name: 'Income Summary',
+                                debit: '0',
+                                credit: reconData.temp_preview.total_income,
+                              },
+                            ]}
+                          />
+                          {/* Entry 2: close expense accounts */}
+                          <ClosingEntryCard
+                            title="Close expense accounts"
+                            posted={reconData.temp_preview.closing_posted}
+                            rows={[
+                              {
+                                code: null,
+                                name: 'Income Summary',
+                                debit: reconData.temp_preview.total_expenses,
+                                credit: '0',
+                              },
+                              ...reconData.temp_preview.expense_accounts.map(a => ({
+                                code: a.account_code,
+                                name: a.account_name,
+                                debit: '0',
+                                credit: a.period_balance,
+                              })),
+                            ]}
+                          />
+                          {/* Entry 3: equity rollup */}
+                          {reconData.equity_preview && (
+                            <ClosingEntryCard
+                              title="Equity rollup — net income to retained earnings"
+                              posted={reconData.equity_preview.rollup_posted}
+                              rows={[
+                                { code: null, name: 'Income Summary', debit: reconData.equity_preview.net_income_balance, credit: '0' },
+                                { code: null, name: 'Retained Earnings', debit: '0', credit: reconData.equity_preview.net_income_balance },
+                              ]}
+                            />
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className="wizard-body-ft">
                       <span className="muted" style={{ fontSize: 12 }}>Closing is reversible — periods can be reopened.</span>
@@ -657,6 +937,50 @@ function CountTile({ label, count, color }: { label: string; count: number; colo
     <div className="count-tile" style={{ borderLeft: `3px solid ${color}` }}>
       <div className="count-tile-label">{label}</div>
       <div className="count-tile-value" style={{ color }}>{count}</div>
+    </div>
+  )
+}
+
+type ClosingRow = { code: number | null; name: string; debit: string; credit: string }
+
+function ClosingEntryCard({ title, posted, rows }: { title: string; posted: boolean; rows: ClosingRow[] }) {
+  const total = rows.reduce((s, r) => s + parseFloat(r.debit || '0'), 0)
+  return (
+    <div className="card">
+      <div className="card-hd">
+        <div>
+          <div className="card-title">{title}</div>
+          <div className="card-sub mono">closing entry</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="mono fw-600">${total.toFixed(2)}</span>
+          {posted
+            ? <span className="badge badge--green">posted</span>
+            : <span className="badge badge--ghost">preview</span>}
+        </div>
+      </div>
+      <div className="tbl-scroll">
+        <table className="tbl">
+          <thead>
+            <tr><th>Account</th><th className="text-right">Debit</th><th className="text-right">Credit</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={i}>
+                <td className="mono" style={{ fontSize: 13 }}>
+                  {row.code != null && <span className="muted">{row.code} · </span>}{row.name}
+                </td>
+                <td className="mono text-right" style={{ color: parseFloat(row.debit) > 0 ? 'var(--text)' : 'var(--text-3)' }}>
+                  {fmtDebitCredit(row.debit)}
+                </td>
+                <td className="mono text-right" style={{ color: parseFloat(row.credit) > 0 ? 'var(--text)' : 'var(--text-3)' }}>
+                  {fmtDebitCredit(row.credit)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
