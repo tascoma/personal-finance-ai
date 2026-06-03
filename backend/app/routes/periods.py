@@ -262,13 +262,17 @@ async def upsert_balances(
         acct.account_code
         for acct in await stated_balance_service.list_balance_accounts(db)
     }
+    batch: dict[int, Decimal] = {}
     for item in body:
         if item.account_code not in valid_codes:
             continue
         try:
-            value = Decimal(item.stated_balance)
+            batch[item.account_code] = Decimal(item.stated_balance)
         except InvalidOperation:
             raise HTTPException(status_code=400, detail=f"Invalid balance for account {item.account_code}")
-        await stated_balance_service.upsert_balance(db, period_id, item.account_code, value)
-    logger.info("Upserted %d balance(s) for period %s", len(body), period_id)
+    try:
+        count = await stated_balance_service.upsert_balances_batch(db, period_id, batch)
+    except stated_balance_service.BalanceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    logger.info("Upserted %d balance(s) for period %s", count, period_id)
     return OperationResult(ok=True)
