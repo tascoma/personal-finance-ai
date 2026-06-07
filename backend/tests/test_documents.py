@@ -103,6 +103,30 @@ async def test_upload_without_document_type_defaults_to_unknown(
 
 
 @pytest.mark.asyncio
+async def test_upload_rejects_oversized_file_without_leaving_partial(
+    client: AsyncClient, session_factory, open_period, monkeypatch
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "max_upload_size_mb", 1)
+    oversized = b"%PDF-1.4 " + b"x" * (2 * 1024 * 1024)  # 2 MB > 1 MB limit
+    files = {"file": ("big.pdf", BytesIO(oversized), "application/pdf")}
+    response = await client.post(
+        f"/api/v1/periods/{open_period.period_id}/documents",
+        data={"document_type": "bank_statement"},
+        files=files,
+    )
+    assert response.status_code == 400
+    assert "maximum upload size" in response.json()["detail"]
+
+    # No DB row and no partial file left on disk.
+    async with session_factory() as session:
+        assert await session.scalar(select(Document)) is None
+    period_dir = document_service.UPLOAD_ROOT / str(open_period.period_id)
+    assert not period_dir.exists() or not any(period_dir.iterdir())
+
+
+@pytest.mark.asyncio
 async def test_upload_mortgage_statement(client: AsyncClient, session_factory, open_period):
     files = {"file": ("mortgage.pdf", BytesIO(b"%PDF-1.4 dummy"), "application/pdf")}
     data = {"document_type": "mortgage_statement"}
