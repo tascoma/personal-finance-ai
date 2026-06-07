@@ -25,6 +25,9 @@ type DashboardTab = 'overview' | 'expenses' | 'assets' | 'forecast'
 // `null` selected year means "All Years".
 const ALL_YEARS = null
 
+// Year the forecast projects toward and that retirement contribution limits apply to.
+const TARGET_YEAR = new Date().getFullYear()
+
 export default function DashboardPage() {
   const [selectedYear, setSelectedYear] = useState<number | null>(ALL_YEARS)
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview')
@@ -92,8 +95,7 @@ export default function DashboardPage() {
     const parsed = parseLabel(lastLabel)
     if (!parsed) return null
     const [ly, lm] = parsed
-    const targetYear = 2026
-    const monthsRemaining = Math.max(0, (targetYear - ly) * 12 + (12 - lm))
+    const monthsRemaining = Math.max(0, (TARGET_YEAR - ly) * 12 + (12 - lm))
     const bars = data.period_bars.slice(-12)
     const avgMonthlyNet = bars.length ? bars.reduce((s, b) => s + parseFloat(b.net), 0) / bars.length : 0
     const trailingFuture = Array.from({ length: monthsRemaining }, (_, k) => lastNw + (k + 1) * avgMonthlyNet)
@@ -244,8 +246,8 @@ export default function DashboardPage() {
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
     const lastLabel = data.net_worth_series[n - 1].period_label
     const space = lastLabel.match(/^([A-Z][a-z]{2}) (\d{4})$/)
-    const [ly, lm] = space ? [parseInt(space[2], 10), monthNames.indexOf(space[1]) + 1] : [2026, 12]
-    const monthsRemaining = Math.max(0, (2026 - ly) * 12 + (12 - lm))
+    const [ly, lm] = space ? [parseInt(space[2], 10), monthNames.indexOf(space[1]) + 1] : [TARGET_YEAR, 12]
+    const monthsRemaining = Math.max(0, (TARGET_YEAR - ly) * 12 + (12 - lm))
     const histLabels = data.net_worth_series.map((p) => p.period_label)
     const futureLabels: string[] = []
     for (let k = 1; k <= monthsRemaining; k++) { const total = lm + k; const year = ly + Math.floor((total - 1) / 12); const month = ((total - 1) % 12) + 1; futureLabels.push(`${monthNames[month - 1]} ${year}`) }
@@ -296,7 +298,7 @@ export default function DashboardPage() {
   const assetColors = ['var(--accent)', 'var(--green)', 'var(--amber)', 'var(--purple)', '#38bdf8', 'var(--pink)', '#fb923c', '#34d399']
   const ringData = composition.slice(0, 6).map((d, i) => ({ amount: parseFloat(d.amount), color: assetColors[i % assetColors.length], name: d.sub_category }))
 
-  // Retirement ring — progress toward 2026 annual contribution limits
+  // Retirement ring — progress toward the current year's annual contribution limits
   const CONTRIB_LIMIT_401K = 24_500
   const CONTRIB_LIMIT_IRA  = 7_500
   const CONTRIB_LIMIT_HSA  = 4_400
@@ -313,6 +315,9 @@ export default function DashboardPage() {
   const retirementContribs = data.ytd_retirement_contributions ?? []
   const retirementTotal = retirementContribs.reduce((s, c) => s + Math.max(0, parseFloat(c.amount)), 0)
   const retirementPct = (retirementTotal / CONTRIB_LIMIT_TOTAL) * 100
+  // Pace check: contributions should be ~(months elapsed / 12) of the annual limit by now.
+  const expectedRetirementPct = (new Date().getMonth() + 1) / 12 * 100
+  const retirementOnTrack = retirementPct >= expectedRetirementPct
 
   return (
     <Layout activePeriod={data.active_period}>
@@ -432,9 +437,9 @@ export default function DashboardPage() {
                         <div className="card-hd">
                           <div>
                             <div className="card-title">Retirement Progress</div>
-                            <div className="card-sub">2026 contribution limits</div>
+                            <div className="card-sub">{TARGET_YEAR} contribution limits</div>
                           </div>
-                          <span className="badge badge--accent"><span className="badge-dot" />On track</span>
+                          <span className={`badge ${retirementOnTrack ? 'badge--accent' : 'badge--amber'}`}><span className="badge-dot" />{retirementOnTrack ? 'On track' : 'Behind'}</span>
                         </div>
                         <div className="card-bd">
                           <div className="row gap-4">
@@ -821,7 +826,7 @@ export default function DashboardPage() {
                           <div className="hero-number">{fmtMoney(String(forecast.trailingEoy))}</div>
                           <div className="hero-delta">
                             <SvgIcon name={gain >= 0 ? 'trending' : 'trend-down'} size={14} />
-                            {gain >= 0 ? '+' : ''}{fmtMoney(String(gain))} ({gainPct >= 0 ? '+' : ''}{gainPct.toFixed(1)}%) · EOY 2026
+                            {gain >= 0 ? '+' : ''}{fmtMoney(String(gain))} ({gainPct >= 0 ? '+' : ''}{gainPct.toFixed(1)}%) · EOY {TARGET_YEAR}
                           </div>
                         </div>
                         <div className="hero-stats">
@@ -844,7 +849,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="card">
-                      <div className="card-hd"><div><div className="card-title">Net Worth Forecast</div><div className="card-sub">historical + projected through Dec 2026</div></div></div>
+                      <div className="card-hd"><div><div className="card-title">Net Worth Forecast</div><div className="card-sub">historical + projected through Dec {TARGET_YEAR}</div></div></div>
                       <div className="card-bd"><div style={{ height: 280 }}><canvas ref={forecastRef} /></div></div>
                     </div>
                   </>
