@@ -12,6 +12,7 @@ import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
 import SvgIcon from '../components/SvgIcon'
 import { useConfirm } from '../hooks/useConfirm'
+import { useToast } from '../contexts/ToastContext'
 import ConfidencePill from '../components/ConfidencePill'
 import { fmtPeriod, fmtDebitCredit } from '../utils/format'
 
@@ -74,6 +75,7 @@ export default function CloseWizardPage() {
   const { periodId } = useParams<{ periodId: string }>()
   const qc = useQueryClient()
   const { ask, confirmDialog } = useConfirm()
+  const toast = useToast()
   const [step, setStep] = useState(0)
   const [completed, setCompleted] = useState<Record<number, boolean>>({})
   const [balanceValues, setBalanceValues] = useState<Record<number, string>>({})
@@ -149,6 +151,7 @@ export default function CloseWizardPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['journal', periodId] })
       qc.invalidateQueries({ queryKey: ['period', periodId] })
+      toast.success('Transactions posted')
     },
   })
   const updateAccount = useMutation({
@@ -227,6 +230,7 @@ export default function CloseWizardPage() {
         stated_balance: balanceValues[a.account_code] ?? (periodData?.stated_balances[a.account_code] ?? '0'),
       })),
     ),
+    onSuccess: () => toast.success('Stated balances saved'),
   })
   const runRecon = useMutation({
     mutationFn: () => runReconciliation(periodId!),
@@ -247,7 +251,7 @@ export default function CloseWizardPage() {
   })
   const closePeriod = useMutation({
     mutationFn: () => updatePeriodStatus(periodId!, 'closed'),
-    onSuccess: () => { invalidatePeriod(); setCompleted((c) => ({ ...c, 5: true })) },
+    onSuccess: () => { invalidatePeriod(); setCompleted((c) => ({ ...c, 5: true })); toast.success('Period closed') },
   })
 
   const addEntry = useMutation({

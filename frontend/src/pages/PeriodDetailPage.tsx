@@ -14,6 +14,7 @@ import EmptyState from '../components/EmptyState'
 import SvgIcon from '../components/SvgIcon'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useConfirm } from '../hooks/useConfirm'
+import { useToast } from '../contexts/ToastContext'
 import JournalPage from './JournalPage'
 import ReconcilePage from './ReconcilePage'
 import { fmtPeriod, fmtStatus } from '../utils/format'
@@ -42,6 +43,7 @@ export default function PeriodDetailPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const { ask, confirmDialog } = useConfirm()
+  const toast = useToast()
 
   const [activeTab, setActiveTab] = useState<Tab>('documents')
   const [error, setError] = useState<string | null>(null)
@@ -158,6 +160,7 @@ export default function PeriodDetailPage() {
       const items: StatedBalanceItem[] = Object.entries(balances).filter(([, v]) => v !== '').map(([k, v]) => ({ account_code: parseInt(k, 10), stated_balance: v }))
       return saveBalances(periodId!, items)
     },
+    onSuccess: () => toast.success('Stated balances saved'),
     onError: (e: Error) => setError(e.message),
   })
   const advanceStatus = useMutation({
@@ -177,7 +180,7 @@ export default function PeriodDetailPage() {
   })
   const clearAll = useMutation({
     mutationFn: () => clearAllTransactions(periodId!),
-    onSuccess: invalidate,
+    onSuccess: () => { invalidate(); toast.success('Transactions cleared') },
     onError: (e: Error) => setError(e.message),
   })
   const del = useMutation({
@@ -189,7 +192,7 @@ export default function PeriodDetailPage() {
     mutationFn: () => addManualTransactions(periodId!, {
       transactions: txnRows.filter((r) => r.date && r.desc && r.amount && r.acct).map((r) => ({ txn_date: r.date, description: r.desc, amount: r.amount, account_code: parseInt(r.acct, 10) })),
     }),
-    onSuccess: () => { invalidate(); setTxnRows([{ date: '', desc: '', amount: '', acct: '' }]) },
+    onSuccess: () => { invalidate(); setTxnRows([{ date: '', desc: '', amount: '', acct: '' }]); toast.success('Manual transactions added') },
     onError: (e: Error) => setError(e.message),
   })
 
