@@ -6,7 +6,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.ratelimit import limiter
+from app.core.ratelimit import auth_limit_key, limiter
 from app.dependencies import get_current_user, get_db_session
 from app.models.device_token import DeviceToken
 from app.models.user import User
@@ -64,7 +64,7 @@ async def register(
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit(lambda: settings.auth_rate_limit)
+@limiter.limit(lambda: settings.auth_rate_limit, key_func=auth_limit_key)
 async def login(
     request: Request,
     body: UserLogin,
@@ -88,7 +88,7 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
-@limiter.limit(lambda: settings.auth_rate_limit)
+@limiter.limit(lambda: settings.auth_rate_limit, key_func=auth_limit_key)
 async def refresh(
     request: Request,
     response: Response,
