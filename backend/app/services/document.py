@@ -82,11 +82,23 @@ async def save_upload(
     if not destination.resolve().is_relative_to(directory.resolve()):
         raise DocumentError("Invalid file name")
 
-    contents = await upload.read()
+    # Stream to disk in chunks and abort the moment the size limit is exceeded, so a
+    # large upload is never fully buffered in memory before being rejected.
     max_bytes = settings.max_upload_size_mb * 1024 * 1024
-    if len(contents) > max_bytes:
-        raise DocumentError(f"File exceeds maximum upload size of {settings.max_upload_size_mb} MB")
-    destination.write_bytes(contents)
+    bytes_written = 0
+    chunk_size = 1024 * 1024
+    try:
+        with destination.open("wb") as out:
+            while chunk := await upload.read(chunk_size):
+                bytes_written += len(chunk)
+                if bytes_written > max_bytes:
+                    raise DocumentError(
+                        f"File exceeds maximum upload size of {settings.max_upload_size_mb} MB"
+                    )
+                out.write(chunk)
+    except DocumentError:
+        destination.unlink(missing_ok=True)
+        raise
 
     document = Document(
         period_id=period_id,

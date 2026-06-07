@@ -105,6 +105,18 @@ async def test_list_transactions_returns_period_rows_in_order(client: AsyncClien
 
 
 @pytest.mark.asyncio
+async def test_list_transactions_pagination(client: AsyncClient, seeded):
+    period_id, _, _, _ = seeded
+    page1 = await client.get(f"/api/v1/periods/{period_id}/transactions?limit=1")
+    assert [t["description"] for t in page1.json()] == ["Trader Joes"]
+    page2 = await client.get(f"/api/v1/periods/{period_id}/transactions?limit=1&offset=1")
+    assert [t["description"] for t in page2.json()] == ["Whole Foods"]
+    # Omitting limit returns all rows (unchanged default behavior).
+    all_rows = await client.get(f"/api/v1/periods/{period_id}/transactions")
+    assert len(all_rows.json()) == 2
+
+
+@pytest.mark.asyncio
 async def test_approve_then_unapprove_transaction(client: AsyncClient, seeded):
     period_id, _, _, txn_ids = seeded
     txn_id = txn_ids[0]

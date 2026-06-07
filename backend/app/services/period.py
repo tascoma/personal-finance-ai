@@ -83,8 +83,14 @@ async def create_period(db: AsyncSession, year: int, month: int) -> Period:
     return period
 
 
-async def list_periods(db: AsyncSession) -> Sequence[Period]:
-    result = await db.scalars(select(Period).order_by(Period.period_start.desc()))
+async def list_periods(
+    db: AsyncSession, *, limit: int | None = None, offset: int = 0
+) -> Sequence[Period]:
+    query = select(Period).order_by(Period.period_start.desc())
+    # Default (limit omitted) returns all rows, preserving existing client behavior.
+    if limit is not None:
+        query = query.offset(offset).limit(limit)
+    result = await db.scalars(query)
     return result.all()
 
 

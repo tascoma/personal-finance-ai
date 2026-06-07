@@ -12,6 +12,9 @@ import WorkflowHint from '../components/WorkflowHint'
 import Banner from '../components/Banner'
 import EmptyState from '../components/EmptyState'
 import SvgIcon from '../components/SvgIcon'
+import ConfirmDialog from '../components/ConfirmDialog'
+import { useConfirm } from '../hooks/useConfirm'
+import { useToast } from '../contexts/ToastContext'
 import JournalPage from './JournalPage'
 import ReconcilePage from './ReconcilePage'
 import { fmtPeriod, fmtStatus } from '../utils/format'
@@ -39,6 +42,8 @@ export default function PeriodDetailPage() {
   const { periodId } = useParams<{ periodId: string }>()
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const { ask, confirmDialog } = useConfirm()
+  const toast = useToast()
 
   const [activeTab, setActiveTab] = useState<Tab>('documents')
   const [error, setError] = useState<string | null>(null)
@@ -49,7 +54,6 @@ export default function PeriodDetailPage() {
   const [balancesInitialized, setBalancesInitialized] = useState(false)
   const [orchestrationResult, setOrchestrationResult] = useState<OrchestrationResult | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [txnRows, setTxnRows] = useState([{ date: '', desc: '', amount: '', acct: '' }])
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['period', periodId] })
@@ -156,6 +160,7 @@ export default function PeriodDetailPage() {
       const items: StatedBalanceItem[] = Object.entries(balances).filter(([, v]) => v !== '').map(([k, v]) => ({ account_code: parseInt(k, 10), stated_balance: v }))
       return saveBalances(periodId!, items)
     },
+    onSuccess: () => toast.success('Stated balances saved'),
     onError: (e: Error) => setError(e.message),
   })
   const advanceStatus = useMutation({
@@ -175,7 +180,7 @@ export default function PeriodDetailPage() {
   })
   const clearAll = useMutation({
     mutationFn: () => clearAllTransactions(periodId!),
-    onSuccess: invalidate,
+    onSuccess: () => { invalidate(); toast.success('Transactions cleared') },
     onError: (e: Error) => setError(e.message),
   })
   const del = useMutation({
@@ -187,7 +192,7 @@ export default function PeriodDetailPage() {
     mutationFn: () => addManualTransactions(periodId!, {
       transactions: txnRows.filter((r) => r.date && r.desc && r.amount && r.acct).map((r) => ({ txn_date: r.date, description: r.desc, amount: r.amount, account_code: parseInt(r.acct, 10) })),
     }),
-    onSuccess: () => { invalidate(); setTxnRows([{ date: '', desc: '', amount: '', acct: '' }]) },
+    onSuccess: () => { invalidate(); setTxnRows([{ date: '', desc: '', amount: '', acct: '' }]); toast.success('Manual transactions added') },
     onError: (e: Error) => setError(e.message),
   })
 
@@ -355,14 +360,14 @@ export default function PeriodDetailPage() {
                           </button>
                         )}
                         {canEdit && doc.document_type !== 'manual' && (doc.parse_status === 'parsed' || doc.parse_status === 'complete') && (
-                          <button className="btn btn-secondary btn-sm" disabled={parseDoc.isPending || parseAll.isPending} onClick={() => { if (window.confirm('Reparse? Existing transactions will be replaced.')) parseDoc.mutate(doc.document_id) }}>
+                          <button className="btn btn-secondary btn-sm" disabled={parseDoc.isPending || parseAll.isPending} onClick={() => ask({ title: 'Reparse document?', message: 'Existing transactions for this document will be replaced.', confirmLabel: 'Reparse', onConfirm: () => parseDoc.mutate(doc.document_id) })}>
                             Reparse
                           </button>
                         )}
                         {period?.status === 'pending_close' && posted_doc_ids.includes(doc.document_id) && (
-                          <button className="btn btn-secondary btn-sm" disabled={unpost.isPending} onClick={() => { if (window.confirm('Unpost all transactions from this document?')) unpost.mutate(doc.document_id) }}>Unpost</button>
+                          <button className="btn btn-secondary btn-sm" disabled={unpost.isPending} onClick={() => ask({ title: 'Unpost document?', message: 'All transactions from this document will be unposted.', confirmLabel: 'Unpost', onConfirm: () => unpost.mutate(doc.document_id) })}>Unpost</button>
                         )}
-                        <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }} disabled={deleteDoc.isPending} onClick={() => { if (window.confirm('Delete this document?')) deleteDoc.mutate(doc.document_id) }}>
+                        <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }} disabled={deleteDoc.isPending} onClick={() => ask({ title: 'Delete this document?', message: 'The document and its parsed transactions will be permanently deleted.', danger: true, confirmLabel: 'Delete', onConfirm: () => deleteDoc.mutate(doc.document_id) })}>
                           <SvgIcon name="trash" size={13} />
                         </button>
                       </div>
@@ -577,14 +582,14 @@ export default function PeriodDetailPage() {
               <div className="card-bd stack gap-4">
                 {canEdit && (staged_count > 0 || approved_count > 0) && (
                   <div>
-                    <button className="btn btn-danger" disabled={clearAll.isPending} onClick={() => { if (window.confirm(`Delete all ${staged_count + approved_count} staged/approved transaction(s)?`)) clearAll.mutate() }}>
+                    <button className="btn btn-danger" disabled={clearAll.isPending} onClick={() => ask({ title: 'Clear all transactions?', message: `All ${staged_count + approved_count} staged/approved transaction(s) will be deleted. Posted transactions are not affected.`, danger: true, confirmLabel: 'Clear All', onConfirm: () => clearAll.mutate() })}>
                       Clear All Transactions
                     </button>
                     <p className="muted mt-2" style={{ fontSize: 12 }}>Deletes all staged and approved transactions. Posted transactions are not affected.</p>
                   </div>
                 )}
                 <div>
-                  <button className="btn btn-danger" onClick={() => { setDeleteConfirmText(''); setShowDeleteModal(true) }}>Delete Period</button>
+                  <button className="btn btn-danger" onClick={() => setShowDeleteModal(true)}>Delete Period</button>
                   <p className="muted mt-2" style={{ fontSize: 12 }}>Permanently deletes this period and all related data.</p>
                 </div>
               </div>
@@ -592,31 +597,22 @@ export default function PeriodDetailPage() {
           </div>
         )}
 
-        {/* Delete modal */}
-        {showDeleteModal && period && (() => {
-          const expected = fmtPeriod(period.period_start)
-          const matches = deleteConfirmText === expected
-          return (
-            <div className="modal-backdrop" onClick={() => setShowDeleteModal(false)}>
-              <div className="modal" onClick={(e) => e.stopPropagation()}>
-                <div className="modal-hd">
-                  <div className="modal-title">Delete period</div>
-                  <div className="modal-sub">This action cannot be undone.</div>
-                </div>
-                <div className="modal-bd">
-                  <p className="modal-confirm-label">All documents, transactions, and journal entries for this period will be permanently deleted. Type <strong>{expected}</strong> to confirm.</p>
-                  <input className="inp" style={{ width: '100%' }} placeholder={expected} value={deleteConfirmText} onChange={(e) => setDeleteConfirmText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && matches) del.mutate() }} autoFocus />
-                </div>
-                <div className="modal-ft">
-                  <button className="btn btn-ghost btn-sm" onClick={() => setShowDeleteModal(false)}>Cancel</button>
-                  <button className="btn btn-danger btn-sm" disabled={!matches || del.isPending} onClick={() => del.mutate()}>
-                    {del.isPending ? 'Deleting…' : 'Delete this period'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )
-        })()}
+        {/* Delete-period modal: type-to-confirm variant */}
+        {showDeleteModal && period && (
+          <ConfirmDialog
+            title="Delete period"
+            danger
+            confirmText={fmtPeriod(period.period_start)}
+            confirmLabel="Delete this period"
+            pending={del.isPending}
+            pendingLabel="Deleting…"
+            message={<>All documents, transactions, and journal entries for this period will be permanently deleted. This cannot be undone. Type <strong>{fmtPeriod(period.period_start)}</strong> to confirm.</>}
+            onConfirm={() => del.mutate()}
+            onCancel={() => setShowDeleteModal(false)}
+          />
+        )}
+
+        {confirmDialog}
       </div>
     </Layout>
   )
