@@ -11,6 +11,7 @@ import Layout from '../components/Layout'
 import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
 import SvgIcon from '../components/SvgIcon'
+import { useConfirm } from '../hooks/useConfirm'
 import ConfidencePill from '../components/ConfidencePill'
 import { fmtPeriod, fmtDebitCredit } from '../utils/format'
 
@@ -72,6 +73,7 @@ function handleEvent(
 export default function CloseWizardPage() {
   const { periodId } = useParams<{ periodId: string }>()
   const qc = useQueryClient()
+  const { ask, confirmDialog } = useConfirm()
   const [step, setStep] = useState(0)
   const [completed, setCompleted] = useState<Record<number, boolean>>({})
   const [balanceValues, setBalanceValues] = useState<Record<number, string>>({})
@@ -916,7 +918,7 @@ export default function CloseWizardPage() {
                       <button
                         className="btn btn-primary"
                         disabled={closePeriod.isPending}
-                        onClick={() => { if (window.confirm('Close this period? This locks all journal entries.')) closePeriod.mutate() }}
+                        onClick={() => ask({ title: 'Close this period?', message: 'This locks all journal entries for the period.', confirmLabel: 'Post & close', onConfirm: () => closePeriod.mutate() })}
                       >
                         {closePeriod.isPending ? <><span className="parsing-dots"><span/><span/><span/></span> Closing…</> : <>Post & close <SvgIcon name="check" size={14} /></>}
                       </button>
@@ -928,6 +930,7 @@ export default function CloseWizardPage() {
           </div>
         </div>
       </div>
+      {confirmDialog}
     </Layout>
   )
 }

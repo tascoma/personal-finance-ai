@@ -10,6 +10,7 @@ import PeriodStepper from '../components/PeriodStepper'
 import WorkflowHint from '../components/WorkflowHint'
 import Banner from '../components/Banner'
 import SvgIcon from '../components/SvgIcon'
+import { useConfirm } from '../hooks/useConfirm'
 import { fmtPeriod } from '../utils/format'
 
 function fmtGap(gap: string) {
@@ -34,6 +35,7 @@ export default function ReconcilePage({ embedded, periodId: propPeriodId }: Prop
   const params = useParams<{ periodId: string }>()
   const periodId = propPeriodId ?? params.periodId
   const qc = useQueryClient()
+  const { ask, confirmDialog } = useConfirm()
   const [error, setError] = useState<string | null>(null)
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['reconcile', periodId] })
@@ -246,7 +248,7 @@ export default function ReconcilePage({ embedded, periodId: propPeriodId }: Prop
             <button
               className={`btn ${has_gaps ? 'btn-secondary' : 'btn-primary'}`}
               disabled={advanceStatus.isPending}
-              onClick={() => { if (window.confirm('Close this period? This locks all journal entries.')) advanceStatus.mutate('closed') }}
+              onClick={() => ask({ title: 'Close this period?', message: 'This locks all journal entries for the period.', confirmLabel: 'Close period', onConfirm: () => advanceStatus.mutate('closed') })}
             >
               {advanceStatus.isPending ? 'Closing…' : 'Post & close period'}
               <SvgIcon name="check" size={14} />
@@ -276,6 +278,7 @@ export default function ReconcilePage({ embedded, periodId: propPeriodId }: Prop
           </div>
         </div>
         {content}
+        {confirmDialog}
       </div>
     )
   }
@@ -302,6 +305,7 @@ export default function ReconcilePage({ embedded, periodId: propPeriodId }: Prop
         <WorkflowHint period={period} page="reconcile" />
         <div className="mt-4">{content}</div>
       </div>
+      {confirmDialog}
     </Layout>
   )
 }
