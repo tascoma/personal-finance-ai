@@ -156,6 +156,20 @@ async def test_list_periods_empty(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_list_periods_pagination(client: AsyncClient):
+    # Three periods, returned newest-first by period_start.
+    for month in (1, 2, 3):
+        await client.post("/api/v1/periods", json={"year": 2026, "month": month})
+
+    page1 = await client.get("/api/v1/periods?limit=2")
+    assert [p["period_start"] for p in page1.json()] == ["2026-03-01", "2026-02-01"]
+    page2 = await client.get("/api/v1/periods?limit=2&offset=2")
+    assert [p["period_start"] for p in page2.json()] == ["2026-01-01"]
+    # Omitting limit returns all rows (unchanged default behavior).
+    assert len((await client.get("/api/v1/periods")).json()) == 3
+
+
+@pytest.mark.asyncio
 async def test_create_period_via_api(client: AsyncClient):
     response = await client.post("/api/v1/periods", json={"year": 2026, "month": 4})
     assert response.status_code == 201
