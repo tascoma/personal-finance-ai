@@ -3,7 +3,7 @@ import logging
 import uuid
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,8 +39,10 @@ router = APIRouter(tags=["periods"], dependencies=[Depends(get_current_user)])
 @router.get("/periods", response_model=list[PeriodRead])
 async def list_periods(
     db: AsyncSession = Depends(get_db_session),
+    limit: int | None = Query(default=None, ge=1, description="Max rows to return; omit for all."),
+    offset: int = Query(default=0, ge=0),
 ) -> list[PeriodRead]:
-    periods = await period_service.list_periods(db)
+    periods = await period_service.list_periods(db, limit=limit, offset=offset)
     return [PeriodRead.model_validate(p) for p in periods]
 
 

@@ -115,6 +115,24 @@ async def test_login_bad_password_returns_401(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_login_rate_limited(client: AsyncClient, monkeypatch):
+    """Per-IP rate limit returns 429 once the threshold is exceeded."""
+    from app.core.ratelimit import limiter
+
+    # Low limit for this test; a fresh storage bucket so prior tests don't count.
+    monkeypatch.setattr(settings, "auth_rate_limit", "3/minute")
+    limiter.reset()
+
+    await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+    statuses = [
+        (await client.post("/api/v1/auth/login", json=LOGIN_PAYLOAD)).status_code
+        for _ in range(4)
+    ]
+    assert statuses[:3] == [200, 200, 200]
+    assert statuses[3] == 429
+
+
+@pytest.mark.asyncio
 async def test_login_unknown_and_wrong_password_are_indistinguishable(client: AsyncClient):
     """No account enumeration: an unknown email and a wrong password return the
     same status and the same generic message."""

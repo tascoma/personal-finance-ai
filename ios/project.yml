@@ -33,6 +33,8 @@ schemes:
       config: Debug
     test:
       config: Debug
+      targets:
+        - PersonalFinanceAITests
     profile:
       config: Release
     analyze:
@@ -118,3 +120,22 @@ targets:
           PRODUCT_BUNDLE_IDENTIFIER: com.tascoma.personalfinanceai.stage.widget
         Staging:
           PRODUCT_BUNDLE_IDENTIFIER: com.tascoma.personalfinanceai.stage.widget
+
+  # Hostless logic-test bundle. The files under test (Money, DecimalString) are
+  # self-contained (Foundation/SwiftUI only), so they are compiled directly into
+  # the test target — no host app launch or simulator code signing required.
+  PersonalFinanceAITests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - Tests
+      - path: Core/Networking/JSONCoding.swift
+        group: Core/Networking
+      - path: Shared/Money.swift
+        group: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tascoma.personalfinanceai.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1,2"

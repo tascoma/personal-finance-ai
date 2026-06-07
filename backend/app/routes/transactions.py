@@ -3,7 +3,7 @@ import uuid
 from datetime import date as date_type
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,12 +25,18 @@ router = APIRouter(tags=["transactions"], dependencies=[Depends(get_current_user
 async def list_transactions(
     period_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
+    limit: int | None = Query(default=None, ge=1, description="Max rows to return; omit for all."),
+    offset: int = Query(default=0, ge=0),
 ) -> list[RawTransactionRead]:
-    result = await db.scalars(
+    query = (
         select(RawTransaction)
         .where(RawTransaction.period_id == period_id)
         .order_by(RawTransaction.txn_date, RawTransaction.created_at)
     )
+    # Default (limit omitted) returns all rows, preserving existing client behavior.
+    if limit is not None:
+        query = query.offset(offset).limit(limit)
+    result = await db.scalars(query)
     return [RawTransactionRead.model_validate(t) for t in result.all()]
 
 

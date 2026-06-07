@@ -1,11 +1,12 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.ratelimit import limiter
 from app.dependencies import get_current_user, get_db_session
 from app.models.device_token import DeviceToken
 from app.models.user import User
@@ -63,7 +64,9 @@ async def register(
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit(lambda: settings.auth_rate_limit)
 async def login(
+    request: Request,
     body: UserLogin,
     response: Response,
     db: AsyncSession = Depends(get_db_session),
@@ -85,7 +88,9 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
+@limiter.limit(lambda: settings.auth_rate_limit)
 async def refresh(
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db_session),
     refresh_token: str | None = Cookie(default=None, alias=_REFRESH_COOKIE),

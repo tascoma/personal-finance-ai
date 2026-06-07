@@ -20,6 +20,7 @@ import Banner from '../components/Banner'
 import EmptyState from '../components/EmptyState'
 import ConfidencePill from '../components/ConfidencePill'
 import SvgIcon from '../components/SvgIcon'
+import { useConfirm } from '../hooks/useConfirm'
 import { fmtPeriod, fmtStatus, fmtDebitCredit } from '../utils/format'
 import type { JournalLineCreate, JournalPageResponse, RawTransaction } from '../types'
 
@@ -34,6 +35,7 @@ export default function JournalPage({ embedded, periodId: propPeriodId }: Props)
   const params = useParams<{ periodId: string }>()
   const periodId = propPeriodId ?? params.periodId
   const qc = useQueryClient()
+  const { ask, confirmDialog } = useConfirm()
   const [activeTab, setActiveTab] = useState<Tab>('staged')
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -203,7 +205,7 @@ export default function JournalPage({ embedded, periodId: propPeriodId }: Props)
                     <SvgIcon name="sparkles" size={13} /> Approve high-confidence
                   </button>
                   <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }} disabled={rejectAll.isPending}
-                    onClick={() => { if (window.confirm(`Delete all ${staged.length} staged transaction(s)?`)) rejectAll.mutate() }}>
+                    onClick={() => ask({ title: 'Reject all staged transactions?', message: `All ${staged.length} staged transaction(s) will be deleted.`, danger: true, confirmLabel: 'Reject All', onConfirm: () => rejectAll.mutate() })}>
                     Reject All
                   </button>
                 </>
@@ -337,7 +339,7 @@ export default function JournalPage({ embedded, periodId: propPeriodId }: Props)
                       <span className="mono fw-600">${totalDebit.toFixed(2)}</span>
                       {period.status !== 'closed' && (
                         <button className="icon-btn" disabled={deleteEntry.isPending} style={{ color: 'var(--red)' }}
-                          onClick={() => { if (window.confirm('Delete this entry?')) deleteEntry.mutate(entry.entry_id) }}>
+                          onClick={() => ask({ title: 'Delete this entry?', message: 'This journal entry will be permanently deleted.', danger: true, confirmLabel: 'Delete', onConfirm: () => deleteEntry.mutate(entry.entry_id) })}>
                           <SvgIcon name="trash" size={14} />
                         </button>
                       )}
@@ -472,6 +474,7 @@ export default function JournalPage({ embedded, periodId: propPeriodId }: Props)
           </div>
         </div>
         {content}
+        {confirmDialog}
       </div>
     )
   }
@@ -507,6 +510,7 @@ export default function JournalPage({ embedded, periodId: propPeriodId }: Props)
         <WorkflowHint period={period} page="journal" />
         <div className="mt-4">{content}</div>
       </div>
+      {confirmDialog}
     </Layout>
   )
 }
