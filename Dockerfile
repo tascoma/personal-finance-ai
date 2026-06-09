@@ -36,5 +36,5 @@ EXPOSE 8000
 # Render injects $PORT; use shell form so it expands at runtime.
 # Single worker on purpose: the in-process slowapi rate limiter (app/core/ratelimit.py)
 # keeps per-worker state, so multiple workers would split and weaken the auth limit.
-# Safe here — single-instance free plan, one operator, TCP (not HTTP) health check.
+# Safe here — single Render instance, one operator, TCP (not HTTP) health check.
 CMD ["sh", "-c", "uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
