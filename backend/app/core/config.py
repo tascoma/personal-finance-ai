@@ -25,9 +25,12 @@ class Settings(BaseSettings):
     # only for local development or tests.
     allow_registration: bool = False
 
-    # Per-IP rate limit applied to the unauthenticated auth endpoints (login/refresh).
+    # Rate limit applied to the unauthenticated auth endpoints (login/refresh).
     # slowapi rate-string format. Tests set this very high to avoid cross-test flakiness.
-    auth_rate_limit: str = "5/minute"
+    # Behind Render's proxy this is effectively a global cap on the single worker, so it's
+    # set high enough that the one operator is never inconvenienced while still throttling
+    # brute force. Requires a single uvicorn worker (see Dockerfile) to count authoritatively.
+    auth_rate_limit: str = "10/minute"
 
     # Equity account used as the offset when posting opening-balance uploads.
     # Defaults to 300102 "Prior Period Net Worth" from the seed Chart of Accounts.
