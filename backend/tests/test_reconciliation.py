@@ -29,6 +29,7 @@ from app.models.stated_balance import StatedBalance
 from app.services import journal as journal_service
 from app.services import period as period_service
 from app.services import reconciliation as recon_service
+from app.services import statements as statements_service
 from app.services.reconciliation import ReconciliationError
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
@@ -988,3 +989,80 @@ async def test_post_equity_rollup_route(client, session_factory):
         )).all()
     assert len(lines) == 1
     assert lines[0].credit_amount == Decimal("900")
+
+
+# ── regression: a brand-new account flows through the reports ────────────────
+
+
+@pytest.mark.asyncio
+async def test_new_income_account_aggregates_in_statement_and_closing(session_factory):
+    """A freshly added Income account (not pinned anywhere) must aggregate into the
+    income statement and get swept into equity by the period close — proving the
+    reporting/close paths are account_type-driven, not a hardcoded code list."""
+    period = await _make_period(session_factory, 2026, 5)  # pending_close
+
+    # Simulate the user adding "Other Income" via the Add-Account modal: a new
+    # Income account with its own code/sub-category, not referenced by any of the
+    # curated dashboard KPIs (400101 salary, 400102 comp, 410103 OCI).
+    async with session_factory() as s:
+        s.add(Account(
+            account_code=400107, account_name="Other Income", account_type="Income",
+            sub_category="Other Income", normal_balance="credit",
+            is_memo=False, is_active=True,
+        ))
+        await s.commit()
+
+    # Salary $1000 + Other Income $500, less $300 groceries.
+    await _post_journal_lines(session_factory, period, [
+        (100101, Decimal("1000"), _ZERO),
+        (400101, _ZERO, Decimal("1000")),
+    ])
+    await _post_journal_lines(session_factory, period, [
+        (100101, Decimal("500"), _ZERO),
+        (400107, _ZERO, Decimal("500")),
+    ])
+    await _post_journal_lines(session_factory, period, [
+        (520101, Decimal("300"), _ZERO),
+        (100101, _ZERO, Decimal("300")),
+    ])
+
+    # 1) Income statement: the new account aggregates into totals and shows as a
+    #    line under its own sub-category section.
+    async with session_factory() as s:
+        inc = await statements_service.compute_income_statement(
+            s, [period.period_id], "May 2026"
+        )
+    assert inc.total_income == Decimal("1500")   # 1000 salary + 500 other income
+    assert inc.total_expenses == Decimal("300")
+    assert inc.net_income == Decimal("1200")
+    other_line = next(
+        (ln for sec in inc.income for ln in sec.lines if ln.account_code == 400107),
+        None,
+    )
+    assert other_line is not None, "new income account missing from income statement"
+    assert other_line.amount == Decimal("500")
+    assert any(sec.label == "Other Income" for sec in inc.income)
+
+    # 2) Period close sweeps the new account into equity (300103).
+    async with session_factory() as s:
+        entry = await recon_service.post_closing_entries(s, period.period_id)
+
+    async with session_factory() as s:
+        closing_lines = (await s.scalars(
+            select(JournalLine).where(JournalLine.entry_id == entry.entry_id)
+        )).all()
+    by_account = {ln.account_code: ln for ln in closing_lines}
+    assert 400107 in by_account, "new income account was not closed out"
+    assert by_account[400107].debit_amount == Decimal("500")  # zero its credit balance
+    assert by_account[400107].credit_amount == _ZERO
+    assert by_account[300103].credit_amount == Decimal("1200")  # net income to equity
+    assert sum(ln.debit_amount for ln in closing_lines) == sum(
+        ln.credit_amount for ln in closing_lines
+    )
+
+    # 3) After closing, the new account's net balance is back to zero.
+    async with session_factory() as s:
+        acct_lines = (await s.scalars(
+            select(JournalLine).where(JournalLine.account_code == 400107)
+        )).all()
+    assert sum(ln.credit_amount - ln.debit_amount for ln in acct_lines) == _ZERO
