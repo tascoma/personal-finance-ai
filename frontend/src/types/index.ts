@@ -363,6 +363,26 @@ export interface ReconcilePageResponse {
 
 // ── Request types ──────────────────────────────────────────────────
 
+export interface AccountCreate {
+  account_code: number
+  account_name: string
+  account_type: string
+  sub_category: string
+  normal_balance: string
+  paystub_mapping?: string | null
+  is_memo: boolean
+}
+
+export interface AccountUpdate {
+  account_name?: string
+  account_type?: string
+  sub_category?: string
+  normal_balance?: string
+  paystub_mapping?: string | null
+  is_memo?: boolean
+  is_active?: boolean
+}
+
 export interface PeriodCreate {
   year: number
   month: number
