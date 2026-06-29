@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import SvgIcon from './SvgIcon'
+import SearchPalette from './SearchPalette'
 import UserAvatar from './UserAvatar'
 import { useAuth } from '../contexts/AuthContext'
 import { getMe } from '../api/auth'
@@ -20,6 +21,19 @@ export default function AppHeader({ activePeriod }: Props) {
     enabled: !!token,
     staleTime: Infinity,
   })
+
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   const [theme, setTheme] = useState<'dark' | 'light'>(
     () => {
@@ -61,11 +75,13 @@ export default function AppHeader({ activePeriod }: Props) {
         </Link>
       )}
 
-      <button className="header-search" onClick={() => {}} aria-label="Search">
+      <button className="header-search" onClick={() => setSearchOpen(true)} aria-label="Search">
         <SvgIcon name="search" size={14} />
         <span>Search transactions, accounts…</span>
         <kbd>⌘K</kbd>
       </button>
+
+      {searchOpen && <SearchPalette onClose={() => setSearchOpen(false)} />}
 
       <div className="header-right">
         <button
