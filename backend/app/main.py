@@ -25,6 +25,7 @@ from app.routes import (
     ledger as api_ledger,
     periods as api_periods,
     reconciliation as api_reconciliation,
+    search as api_search,
     statements as api_statements,
     transactions as api_transactions,
 )
@@ -104,6 +105,7 @@ api_router.include_router(api_documents.router)
 api_router.include_router(api_transactions.router)
 api_router.include_router(api_journal.router)
 api_router.include_router(api_reconciliation.router)
+api_router.include_router(api_search.router)
 app.include_router(api_router)
 
 # SPA catch-all: serve frontend/dist/index.html for any unmatched non-API path.
