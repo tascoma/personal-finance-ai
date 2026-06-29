@@ -269,6 +269,12 @@ export default function StatementsPage() {
                             <span className="stmt-amount"><Money val={sec.subtotals[idx] ?? '0'} /></span>
                           </div>
                         ))}
+                        {bs.equity.length > 0 && (
+                          <div className="stmt-row">
+                            <span className="stmt-label" style={{ fontStyle: 'italic', fontSize: 12.5, color: 'var(--text-2)' }}>Total Equity</span>
+                            <span className="stmt-amount"><Money val={bs.total_equity[idx] ?? '0'} /></span>
+                          </div>
+                        )}
                         <div className="stmt-row total" style={{ marginTop: 'auto' }}>
                           <span className="stmt-label">Total Liabilities + Equity</span>
                           <span className="stmt-amount"><Money val={(parseFloat(bs.total_liabilities[idx] ?? '0') + parseFloat(bs.total_equity[idx] ?? '0')).toFixed(2)} /></span>
