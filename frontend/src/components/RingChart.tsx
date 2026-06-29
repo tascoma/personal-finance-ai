@@ -27,18 +27,19 @@ export default function RingChart({ data, size = 168, thickness = 18, centerLabe
         <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--line)" strokeWidth={thickness} />
         {data.map((d, i) => {
           const len = total > 0 ? (d.amount / total) * c : 0
-          const el = (
+          const segOffset = offset
+          offset += len
+          if (len < 2) return null
+          return (
             <circle key={i}
               cx={size/2} cy={size/2} r={r} fill="none"
               stroke={d.color} strokeWidth={thickness}
-              strokeDasharray={`${len} ${c - len}`}
-              strokeDashoffset={-offset}
+              strokeDasharray={`${len + 1} ${Math.max(0, c - len - 1)}`}
+              strokeDashoffset={-segOffset}
               strokeLinecap="butt"
               transform={`rotate(-90 ${size/2} ${size/2})`}
             />
           )
-          offset += len
-          return el
         })}
         {goalPct !== undefined && (() => {
           const angle = -Math.PI / 2 + (goalPct / 100) * 2 * Math.PI
