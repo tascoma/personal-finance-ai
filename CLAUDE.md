@@ -158,40 +158,6 @@ npm run dev
 
 Backend: `http://127.0.0.1:8000` · Frontend dev server: `http://localhost:5173`
 
-### Building and installing the iOS app to a physical device
-
-The login keychain on this Mac has a broken password history (result of a macOS migration). A separate signing keychain at `~/Library/Keychains/xcodesign.keychain-db` (password: `build`) was created to work around this. **Always unlock it and add it to the search list before running xcodebuild**, otherwise codesign fails with `errSecInternalComponent`. **Always remove it from the search list when done.**
-
-```bash
-# Before building
-security unlock-keychain -p "build" ~/Library/Keychains/xcodesign.keychain-db
-security list-keychains -s ~/Library/Keychains/xcodesign.keychain-db ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain
-```
-
-Then build and install (use `Staging` config to hit the Render staging backend; `Debug` points at localhost which the phone can't reach):
-
-```bash
-cd ios
-xcodebuild \
-  -project PersonalFinanceAI.xcodeproj \
-  -scheme PersonalFinanceAI \
-  -configuration Staging \
-  -destination 'id=00008130-000848C6012B803A' \
-  -allowProvisioningUpdates \
-  -allowProvisioningDeviceRegistration \
-  OTHER_CODE_SIGN_FLAGS="--keychain ~/Library/Keychains/xcodesign.keychain-db" \
-  build
-
-xcrun devicectl device install app \
-  --device 00008130-000848C6012B803A \
-  ~/Library/Developer/Xcode/DerivedData/PersonalFinanceAI-*/Build/Products/Staging-iphoneos/PersonalFinanceAI.app
-
-# After building — always remove from search list
-security list-keychains -s ~/Library/Keychains/login.keychain-db /Library/Keychains/System.keychain
-```
-
-Tony's iPhone UDID: `00008130-000848C6012B803A`. If the signing cert ever goes missing (e.g. after a keychain wipe), re-run with `-allowProvisioningUpdates -allowProvisioningDeviceRegistration` and it will create a fresh one in the `xcodesign` keychain.
-
 ## Conventions
 
 - `models/` holds SQLAlchemy classes; `schemas/` holds Pydantic classes — keep them separate.
