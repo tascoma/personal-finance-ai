@@ -148,8 +148,6 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-3) 100%);
   display: grid; place-items: center;
   color: var(--on-accent);
-  font-weight: 700;
-  font-size: 13px;
   box-shadow: 0 0 0 1px var(--line-2), 0 2px 8px var(--accent-glow);
   flex-shrink: 0;
 }
@@ -956,7 +954,7 @@ select.inp { cursor: pointer; appearance: none; padding-right: 32px;
   padding: 48px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
 }
 .login-art-side::before {
   content: '';
@@ -966,12 +964,6 @@ select.inp { cursor: pointer; appearance: none; padding-right: 32px;
     radial-gradient(600px 280px at 100% 0%, rgba(255,255,255,0.15), transparent 50%);
   pointer-events: none;
 }
-.login-art-mark {
-  display: flex; align-items: center; gap: 12px;
-  font-weight: 600; font-size: 16px; letter-spacing: -0.015em;
-  z-index: 1; position: relative;
-}
-.login-art-mark .brand-mark { background: rgba(255,255,255,0.18); color: white; box-shadow: none; }
 .login-art-quote {
   font-size: 32px; font-weight: 600; line-height: 1.2;
   letter-spacing: -0.025em;

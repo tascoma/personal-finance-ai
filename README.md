@@ -1,4 +1,4 @@
-# Personal Finance Agent
+# Personal Finance AI
 
 A personal double-entry accounting system with an AI-powered document and transaction intelligence backend, a React web frontend, and a native SwiftUI iOS companion app. Upload bank statements, paystubs, and mortgage documents; let AI agents extract and classify transactions; then follow a structured monthly close workflow to maintain an accurate general ledger.
 
