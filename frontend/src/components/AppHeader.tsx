@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import SvgIcon from './SvgIcon'
 import SearchPalette from './SearchPalette'
 import UserAvatar from './UserAvatar'
+import BrandMark from './BrandMark'
 import { useAuth } from '../contexts/AuthContext'
 import { getMe } from '../api/auth'
 import type { Period } from '../types'
@@ -59,7 +60,7 @@ export default function AppHeader({ activePeriod }: Props) {
   return (
     <header className="header">
       <Link to="/" className="brand">
-        <span className="brand-mark">F</span>
+        <BrandMark />
         <span>Finance AI</span>
       </Link>
 
