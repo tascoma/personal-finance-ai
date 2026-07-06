@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { loginUser } from '../api/auth'
 import { ApiError } from '../api/client'
 import SvgIcon from '../components/SvgIcon'
+import BrandMark from '../components/BrandMark'
 
 export default function LoginPage() {
   const { login } = useAuth()
@@ -33,8 +34,8 @@ export default function LoginPage() {
       <div className="login-form-side">
         <div className="login-form-wrap">
           <div className="row gap-3 mb-6">
-            <span className="brand-mark">F</span>
-            <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-0.015em' }}>Finance AI</span>
+            <BrandMark />
+            <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: '-0.015em' }}>Personal Finance AI</span>
           </div>
 
           <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.025em', marginBottom: 8 }}>
@@ -88,10 +89,6 @@ export default function LoginPage() {
       </div>
 
       <div className="login-art-side">
-        <div className="login-art-mark">
-          <span className="brand-mark">F</span>
-          <span>Finance AI</span>
-        </div>
         <div>
           <div className="login-art-quote">
             Your double-entry ledger,<br />powered by AI extractors.
@@ -100,7 +97,6 @@ export default function LoginPage() {
             Statements · paystubs · mortgage docs — parsed, classified, and reconciled.
           </div>
         </div>
-        <div className="login-art-foot">Personal Finance AI</div>
       </div>
     </div>
   )
