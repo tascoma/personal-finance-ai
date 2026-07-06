@@ -1,6 +1,6 @@
 #include "Base.xcconfig"
 
-DISPLAY_NAME = Finance (Stage)
+DISPLAY_NAME = Finance AI (Stage)
 
 API_BASE_URL = https:/$()/personal-finance-agent-1-tqet.onrender.com
 APNS_SANDBOX = YES
