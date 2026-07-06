@@ -113,7 +113,7 @@ struct DashboardView: View {
 
                 Group {
                     switch selectedTab {
-                    case .overview: OverviewTab(data: data)
+                    case .overview: OverviewTab(data: data, scopeLabel: vm.selectedFilter.label)
                     case .expenses: ExpenseInsightsTab(data: data)
                     case .assets: AssetInsightsTab(data: data)
                     case .forecast: ForecastTab(data: data)

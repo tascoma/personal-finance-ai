@@ -113,6 +113,7 @@ struct DashboardResponse: Decodable {
     @DecimalString var retirementContributions: Decimal
     @DecimalString var compensationIncome: Decimal
     @DecimalString var lifestyleExpenses: Decimal
+    @DecimalString var oci: Decimal
     @DecimalString var liquidAssets: Decimal
     @DecimalString var liquidAssetsPrev: Decimal
     @DecimalString var taxAdvantaged: Decimal
@@ -143,6 +144,7 @@ struct DashboardResponse: Decodable {
         case retirementContributions = "retirement_contributions"
         case compensationIncome = "compensation_income"
         case lifestyleExpenses = "lifestyle_expenses"
+        case oci
         case liquidAssets = "liquid_assets"
         case liquidAssetsPrev = "liquid_assets_prev"
         case taxAdvantaged = "tax_advantaged"

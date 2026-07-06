@@ -42,6 +42,9 @@ struct IncomeStatementContent: View {
     let totalIncome: Decimal
     let totalExpenses: Decimal
     let netIncome: Decimal
+    let oci: Decimal
+
+    private var comprehensiveIncome: Decimal { netIncome + oci }
 
     var body: some View {
         VStack(spacing: Space.md) {
@@ -49,17 +52,27 @@ struct IncomeStatementContent: View {
             row("Expenses", totalExpenses, color: .appRed, parenthesize: true)
             Rectangle().fill(Color.appLine).frame(height: 1)
             row("Net Income", netIncome, color: netIncome >= 0 ? .appGreen : .appRed, bold: true)
+            if oci != 0 {
+                row("OCI", oci, color: oci >= 0 ? .appGreen : .appRed)
+                Rectangle().fill(Color.appLine).frame(height: 1)
+                row("Comprehensive Income", comprehensiveIncome,
+                    color: comprehensiveIncome >= 0 ? .appGreen : .appRed, bold: true)
+            }
         }
     }
 
+    /// `parenthesize` forces parens even for non-negative values (e.g. Expenses, which
+    /// the API reports as a positive total but is always displayed as an outflow).
+    /// Negative values are always parenthesized around their absolute value.
     private func row(_ label: String, _ value: Decimal, color: Color, bold: Bool = false, parenthesize: Bool = false) -> some View {
         let valueFont: Font = bold ? .callout.weight(.semibold) : .subheadline.weight(.semibold)
+        let text = (parenthesize || value < 0) ? "(\(Money.format(Swift.abs(value))))" : Money.format(value)
         return HStack {
             Text(label)
                 .font(bold ? .subheadline.weight(.semibold) : .subheadline)
                 .foregroundStyle(bold ? Color.appTextPrimary : Color.appTextSecondary)
             Spacer()
-            Text(parenthesize ? "(\(Money.format(value)))" : Money.format(value))
+            Text(text)
                 .font(valueFont.monospacedDigit())
                 .foregroundStyle(color)
         }

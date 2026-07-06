@@ -8,9 +8,14 @@ enum ChartPalette {
         .appAccent, .appGreen, .appAmber, .appPurple,
         Color(hex: "38bdf8"), Color(hex: "f472b6"), Color(hex: "fb923c"), Color(hex: "34d399"),
     ]
+    /// 12 distinct hues — one per expense sub-category in the chart of accounts (Housing,
+    /// Utilities, Food, Transportation, Communications, Subscriptions, Lifestyle, Personal,
+    /// Giving, Payroll Taxes, Employee Benefits, Suspense), so the Expense Trendlines legend
+    /// never assigns the same or a near-identical colour to two categories.
     static let expense: [Color] = [
         .appRed, .appAmber, .appAccent, .appGreen,
-        .appPurple, Color(hex: "f472b6"), Color(hex: "38bdf8"), Color(hex: "fb923c"),
+        .appPurple, Color(hex: "f472b6"), Color(hex: "fb923c"), Color(hex: "2dd4bf"),
+        Color(hex: "a3e635"), Color(hex: "818cf8"), Color(hex: "e879f9"), Color(hex: "94a3b8"),
     ]
 }
 

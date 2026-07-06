@@ -2,6 +2,7 @@ import SwiftUI
 
 struct OverviewTab: View {
     let data: DashboardResponse
+    let scopeLabel: String
 
     // MARK: Hero figures
 
@@ -88,10 +89,11 @@ struct OverviewTab: View {
                 }
             }
 
-            DashboardCard("Income Statement") {
+            DashboardCard("Income Statement", subtitle: scopeLabel) {
                 IncomeStatementContent(totalIncome: data.totalIncome,
                                        totalExpenses: data.totalExpenses,
-                                       netIncome: data.netIncome)
+                                       netIncome: data.netIncome,
+                                       oci: data.oci)
             }
 
             if !data.topExpenseCategories.isEmpty {

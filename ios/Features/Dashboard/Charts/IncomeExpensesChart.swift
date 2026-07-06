@@ -9,6 +9,15 @@ struct IncomeExpensesChart: View {
         case expenses = "Expenses"
     }
 
+    /// Categorical string axes aren't thinned by `.automatic(desiredCount:)`, so with
+    /// 6+ periods every label renders and gets clipped. Pick a subset up front instead.
+    private var xAxisLabelValues: [String] {
+        let labels = bars.map(\.periodLabel)
+        guard labels.count > 4 else { return labels }
+        let step = Int(ceil(Double(labels.count) / 4.0))
+        return stride(from: 0, to: labels.count, by: step).map { labels[$0] }
+    }
+
     var body: some View {
         Chart {
             ForEach(bars) { bar in
@@ -32,7 +41,7 @@ struct IncomeExpensesChart: View {
             Series.expenses: Color.appRed,
         ])
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 4)) { value in
+            AxisMarks(values: xAxisLabelValues) { value in
                 AxisGridLine()
                 AxisValueLabel {
                     if let label = value.as(String.self) {

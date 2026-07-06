@@ -20,18 +20,32 @@ struct ExpenseTrendlinesChart: View {
         return series.compactMap { seen.insert($0.periodLabel).inserted ? $0.periodLabel : nil }
     }
 
-    /// Stable category → colour map, keyed by the top-categories order.
+    private var allSeriesCategories: [String] {
+        var seen = Set<String>()
+        return series.compactMap { seen.insert($0.category).inserted ? $0.category : nil }
+    }
+
+    /// Stable category → colour map. `topCategories` (the Expense Mix donut's ranking)
+    /// only covers its top N, but the trendline series can include additional
+    /// lower-spend categories — those still need a colour, so assignment continues
+    /// from a single running index rather than a separate offset that could wrap
+    /// back onto an already-used slot.
     private var colorOf: [String: Color] {
         var m = [String: Color]()
-        for (i, c) in topCategories.enumerated() {
-            m[c.category] = ChartPalette.expense[i % ChartPalette.expense.count]
+        var nextIndex = 0
+        for c in topCategories where m[c.category] == nil {
+            m[c.category] = ChartPalette.expense[nextIndex % ChartPalette.expense.count]
+            nextIndex += 1
+        }
+        for cat in allSeriesCategories where m[cat] == nil {
+            m[cat] = ChartPalette.expense[nextIndex % ChartPalette.expense.count]
+            nextIndex += 1
         }
         return m
     }
 
     private var categories: [String] {
-        var seen = Set<String>()
-        let all = series.compactMap { seen.insert($0.category).inserted ? $0.category : nil }
+        let all = allSeriesCategories
         guard scale == .under1k else { return all }
         return all.filter { cat in
             let maxVal = series.filter { $0.category == cat }.map { $0.amount.asDouble }.max() ?? 0
@@ -40,9 +54,16 @@ struct ExpenseTrendlinesChart: View {
     }
 
     private var range: [Color] {
-        categories.enumerated().map { idx, cat in
-            colorOf[cat] ?? ChartPalette.expense[(topCategories.count + idx) % ChartPalette.expense.count]
-        }
+        categories.map { colorOf[$0] ?? .appTextTertiary }
+    }
+
+    /// Categorical string axes aren't thinned by `.automatic(desiredCount:)`, so with
+    /// 6+ periods every label renders and gets clipped. Pick a subset up front instead.
+    private var xAxisLabelValues: [String] {
+        let labels = periodLabels
+        guard labels.count > 4 else { return labels }
+        let step = Int(ceil(Double(labels.count) / 4.0))
+        return stride(from: 0, to: labels.count, by: step).map { labels[$0] }
     }
 
     var body: some View {
@@ -67,7 +88,7 @@ struct ExpenseTrendlinesChart: View {
             }
             .chartForegroundStyleScale(domain: categories, range: range)
             .chartXAxis {
-                AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                AxisMarks(values: xAxisLabelValues) { value in
                     AxisGridLine()
                     AxisValueLabel {
                         if let label = value.as(String.self) {
@@ -86,8 +107,31 @@ struct ExpenseTrendlinesChart: View {
                     }
                 }
             }
-            .chartLegend(position: .bottom, alignment: .center, spacing: 6)
+            .chartLegend(.hidden)
             .frame(height: 240)
+
+            legend
         }
+    }
+
+    private static let legendColumns = [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)]
+
+    /// Two-column grid of swatch + label entries, sized to fit long names like
+    /// "Employee Benefits" without truncating.
+    private var legend: some View {
+        LazyVGrid(columns: Self.legendColumns, alignment: .leading, spacing: 8) {
+            ForEach(Array(zip(categories, range)), id: \.0) { category, color in
+                HStack(spacing: 8) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(color)
+                        .frame(width: 10, height: 10)
+                    Text(category)
+                        .font(.caption)
+                        .foregroundStyle(Color.appTextSecondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

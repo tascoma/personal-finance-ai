@@ -1,15 +1,23 @@
 """Tests for the Period resource — service + HTTP routes."""
 
+import uuid
 from datetime import date
+from decimal import Decimal
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.databases import Base
 from app.dependencies import get_current_user, get_db_session
+from app.models.document import Document
+from app.models.journal import JournalEntry, JournalLine
+from app.models.raw_transaction import RawTransaction
+from app.models.reconciliation import Reconciliation
+from app.models.review_queue import ReviewQueue
+from app.models.stated_balance import StatedBalance
 from app.models.user import User
 from app.main import app
 from app.models.period import Period
@@ -35,7 +43,6 @@ async def client(session_factory):
             yield session
 
     async def _mock_user() -> User:
-        import uuid
         return User(user_id=uuid.uuid4(), email="test@test.com", hashed_password="", is_active=True)
 
     app.dependency_overrides[get_db_session] = override_get_db_session
@@ -115,6 +122,93 @@ async def test_delete_open_succeeds(session_factory):
 
         remaining = await session.scalar(select(Period).where(Period.period_id == pid))
         assert remaining is None
+
+
+@pytest.mark.asyncio
+async def test_delete_period_removes_all_children(session_factory):
+    """Regression test for the pre-102e2de bug where delete_period left
+    orphaned rows in documents/raw_transactions/stated_balances (and others)
+    behind because it deleted the period without touching its children."""
+    async with session_factory() as session:
+        period = await period_service.create_period(session, 2026, 1)
+        pid = period.period_id
+
+        doc = Document(
+            period_id=pid,
+            document_type="bank_statement",
+            file_name="test.csv",
+            file_path="/tmp/test.csv",
+            source_account_code=100101,
+            parse_status="complete",
+        )
+        session.add(doc)
+        await session.commit()
+        await session.refresh(doc)
+
+        txn = RawTransaction(
+            document_id=doc.document_id,
+            period_id=pid,
+            txn_date=date(2026, 1, 10),
+            description="GROCERY STORE",
+            amount=Decimal("-45.00"),
+            suggested_account_code=520101,
+            classifier_confidence=Decimal("0.95"),
+            is_flagged=False,
+            is_duplicate=False,
+            status="staged",
+        )
+        session.add(txn)
+        await session.commit()
+        await session.refresh(txn)
+
+        entry = JournalEntry(
+            period_id=pid,
+            entry_date=date(2026, 1, 10),
+            description="GROCERY STORE",
+            source_type="statement",
+            source_document_id=doc.document_id,
+        )
+        session.add(entry)
+        await session.commit()
+        await session.refresh(entry)
+
+        line1 = JournalLine(
+            entry_id=entry.entry_id, account_code=520101,
+            debit_amount=Decimal("45.00"), credit_amount=Decimal("0"),
+        )
+        line2 = JournalLine(
+            entry_id=entry.entry_id, account_code=100101,
+            debit_amount=Decimal("0"), credit_amount=Decimal("45.00"),
+        )
+        session.add_all([line1, line2])
+
+        sb = StatedBalance(period_id=pid, account_code=100101, stated_balance=Decimal("1000.00"))
+        session.add(sb)
+
+        recon = Reconciliation(
+            period_id=pid, account_code=100101,
+            computed_balance=Decimal("1000.00"), stated_balance=Decimal("1000.00"),
+            status="reconciled",
+        )
+        session.add(recon)
+
+        review = ReviewQueue(
+            period_id=pid, raw_txn_id=txn.raw_txn_id, review_type="ambiguous",
+        )
+        session.add(review)
+        await session.commit()
+
+        await period_service.delete_period(session, pid)
+
+    async with session_factory() as session:
+        assert await session.scalar(select(Period).where(Period.period_id == pid)) is None
+        assert await session.scalar(select(func.count()).select_from(Document).where(Document.period_id == pid)) == 0
+        assert await session.scalar(select(func.count()).select_from(RawTransaction).where(RawTransaction.period_id == pid)) == 0
+        assert await session.scalar(select(func.count()).select_from(JournalEntry).where(JournalEntry.period_id == pid)) == 0
+        assert await session.scalar(select(func.count()).select_from(JournalLine).where(JournalLine.entry_id == entry.entry_id)) == 0
+        assert await session.scalar(select(func.count()).select_from(StatedBalance).where(StatedBalance.period_id == pid)) == 0
+        assert await session.scalar(select(func.count()).select_from(Reconciliation).where(Reconciliation.period_id == pid)) == 0
+        assert await session.scalar(select(func.count()).select_from(ReviewQueue).where(ReviewQueue.period_id == pid)) == 0
 
 
 @pytest.mark.asyncio
