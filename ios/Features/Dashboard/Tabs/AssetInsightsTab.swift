@@ -29,24 +29,15 @@ struct AssetInsightsTab: View {
         }
     }
 
+    /// First-vs-last growth over whatever's currently in scope, mirroring
+    /// `OverviewTab.ytdDelta` — this stays available for any 2+ period scope
+    /// (a single calendar year included), instead of requiring a prior year's
+    /// baseline that a single-year filter would never have.
     private var ytdGrowth: (pct: Double, delta: Double)? {
-        let labels = periodLabels
         let totals = growthTotals
-        guard let latestLabel = labels.last else { return nil }
-        let latestYear = yearOf(latestLabel)
-        var baselineIdx = -1
-        for i in stride(from: labels.count - 1, through: 0, by: -1) where yearOf(labels[i]) < latestYear {
-            baselineIdx = i; break
-        }
-        guard baselineIdx >= 0 else { return nil }
-        let baseline = totals[baselineIdx]
-        guard baseline != 0 else { return nil }
+        guard let first = totals.first, totals.count > 1, first != 0 else { return nil }
         let last = totals[totals.count - 1]
-        return ((last - baseline) / baseline * 100, last - baseline)
-    }
-
-    private func yearOf(_ label: String) -> Int {
-        Int(label.split(separator: " ").last.map(String.init) ?? "") ?? 0
+        return ((last - first) / first * 100, last - first)
     }
 
     private var hero: HeroCard {
