@@ -169,7 +169,9 @@ struct ExpenseTrendlinesChart: View {
                     AxisGridLine()
                     AxisValueLabel {
                         if let label = value.as(String.self) {
-                            Text(label).font(.caption2)
+                            // `.fixedSize()` or the label is clipped to its category
+                            // slot's width ("Jan 20…").
+                            Text(label).font(.caption2).fixedSize()
                         }
                     }
                 }
