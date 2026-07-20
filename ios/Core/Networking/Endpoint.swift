@@ -24,9 +24,15 @@ struct Endpoint {
     static let me = Endpoint(method: "GET", path: "/auth/me", requiresAuth: true)
     static let periods = Endpoint(method: "GET", path: "/periods", requiresAuth: true)
 
-    static func dashboard(year: Int? = nil, fromPeriodId: UUID? = nil, toPeriodId: UUID? = nil) -> Endpoint {
+    static func dashboard(
+        year: Int? = nil,
+        periodId: UUID? = nil,
+        fromPeriodId: UUID? = nil,
+        toPeriodId: UUID? = nil
+    ) -> Endpoint {
         var query: [String] = []
         if let year { query.append("year=\(year)") }
+        if let periodId { query.append("period_id=\(periodId.uuidString.lowercased())") }
         if let from = fromPeriodId { query.append("from_period_id=\(from.uuidString.lowercased())") }
         if let to = toPeriodId { query.append("to_period_id=\(to.uuidString.lowercased())") }
         let suffix = query.isEmpty ? "" : "?\(query.joined(separator: "&"))"
@@ -37,13 +43,21 @@ struct Endpoint {
         method: "GET", path: "/statements/balance-sheet", requiresAuth: true
     )
 
-    static func incomeStatement(periodId: UUID? = nil) -> Endpoint {
-        let suffix = periodId.map { "?period_id=\($0.uuidString.lowercased())" } ?? ""
+    /// `periodId` takes precedence over `year` — the backend ignores `year` when a
+    /// period is supplied, so only ever one of the two is sent.
+    private static func statementQuery(periodId: UUID?, year: Int?) -> String {
+        if let periodId { return "?period_id=\(periodId.uuidString.lowercased())" }
+        if let year { return "?year=\(year)" }
+        return ""
+    }
+
+    static func incomeStatement(periodId: UUID? = nil, year: Int? = nil) -> Endpoint {
+        let suffix = statementQuery(periodId: periodId, year: year)
         return Endpoint(method: "GET", path: "/statements/income\(suffix)", requiresAuth: true)
     }
 
-    static func cashflowStatement(periodId: UUID? = nil) -> Endpoint {
-        let suffix = periodId.map { "?period_id=\($0.uuidString.lowercased())" } ?? ""
+    static func cashflowStatement(periodId: UUID? = nil, year: Int? = nil) -> Endpoint {
+        let suffix = statementQuery(periodId: periodId, year: year)
         return Endpoint(method: "GET", path: "/statements/cashflow\(suffix)", requiresAuth: true)
     }
 

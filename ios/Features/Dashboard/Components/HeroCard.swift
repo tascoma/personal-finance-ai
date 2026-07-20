@@ -25,13 +25,14 @@ struct HeroDelta {
 
 /// Per-tab gradient identity, mirroring the web `.hero` variants.
 enum HeroStyle {
-    case netWorth, expenses, assets, forecast
+    case netWorth, expenses, assets, period, forecast
 
     var gradient: [Color] {
         switch self {
         case .netWorth: return [Self.dyn("56c8f0", "0284c7"), Self.dyn("2596c4", "38bdf8")]
         case .expenses: return [Self.dyn("fb7185", "dc2626"), Self.dyn("b45309", "b45309")]
         case .assets:   return [Self.dyn("22c55e", "16a34a"), Self.dyn("15803d", "14532d")]
+        case .period:   return [Self.dyn("475569", "334155"), Self.dyn("1e293b", "0f172a")]
         case .forecast: return [Self.dyn("7c3aed", "6d28d9"), Self.dyn("4338ca", "3730a3")]
         }
     }

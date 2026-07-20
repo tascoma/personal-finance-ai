@@ -159,9 +159,13 @@ async def _load_lines(
     return list(result.all())
 
 
-async def _closed_period_ids(db: AsyncSession) -> list[UUID]:
-    result = await db.scalars(select(Period.period_id).where(Period.status == "closed"))
-    return list(result.all())
+async def _closed_period_ids(db: AsyncSession, year: Optional[int] = None) -> list[UUID]:
+    stmt = select(Period).where(Period.status == "closed")
+    result = await db.scalars(stmt)
+    periods = result.all()
+    if year is not None:
+        periods = [p for p in periods if p.period_start.year == year]
+    return [p.period_id for p in periods]
 
 
 async def list_periods_desc(db: AsyncSession) -> list[Period]:
@@ -288,8 +292,10 @@ async def compute_income_statement(
     db: AsyncSession,
     period_ids: Optional[list[UUID]],
     range_label: str,
+    year: Optional[int] = None,
 ) -> IncomeStatement:
-    """Income and expenses for the given periods (or all closed periods if None).
+    """Income and expenses for the given periods (or closed periods in `year`,
+    or all closed periods if both are None).
 
     Unrealized mark-to-market accounts (see OCI_ACCOUNT_CODES) are partitioned
     out of regular income and reported separately as Other Comprehensive Income
@@ -297,7 +303,7 @@ async def compute_income_statement(
     """
     accounts = await _load_accounts(db)
     if period_ids is None:
-        period_ids = await _closed_period_ids(db)
+        period_ids = await _closed_period_ids(db, year=year)
     lines = await _load_lines(db, period_ids, exclude_closing=True)
 
     income_all, _ = _group_by_subcategory(lines, accounts, "Income")
@@ -560,8 +566,10 @@ async def compute_cashflow(
     db: AsyncSession,
     period_ids: Optional[list[UUID]],
     range_label: str,
+    year: Optional[int] = None,
 ) -> CashflowStatement:
-    """Indirect-method cash flow for a single period.
+    """Indirect-method cash flow for the given periods (or closed periods in
+    `year`, or all closed periods since inception if both are None).
 
     Operating section: net income adjusted for (a) non-cash income/expense items
     (e.g. RSU vesting, unrealized gains) and (b) changes in credit card balances.
@@ -569,9 +577,12 @@ async def compute_cashflow(
     asset and liability/equity accounts respectively.
     """
     accounts = await _load_accounts(db)
-    all_periods = period_ids is None
+    # True "since inception" aggregates start beginning cash at zero (nothing to
+    # roll forward from); a year-scoped aggregate rolls forward from the real
+    # balance as of the start of that year, computed below via _beginning_cash.
+    all_periods = period_ids is None and year is None
     if period_ids is None:
-        period_ids = await _closed_period_ids(db)
+        period_ids = await _closed_period_ids(db, year=year)
     lines = await _load_lines(db, period_ids, exclude_closing=True)
 
     cash_codes = {code for code, a in accounts.items() if _is_cash_account(a)}

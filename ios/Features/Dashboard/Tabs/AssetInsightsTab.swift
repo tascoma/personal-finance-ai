@@ -2,6 +2,16 @@ import SwiftUI
 
 struct AssetInsightsTab: View {
     let data: DashboardResponse
+    let closedPeriods: [Period]
+    let selectedYear: Int?
+    @State private var cashflowVM: AssetCashflowViewModel
+
+    init(data: DashboardResponse, api: APIClient, closedPeriods: [Period], selectedYear: Int?) {
+        self.data = data
+        self.closedPeriods = closedPeriods
+        self.selectedYear = selectedYear
+        _cashflowVM = State(initialValue: AssetCashflowViewModel(api: api))
+    }
 
     private static let growthExcluded: Set<String> = [
         "Real Estate", "Cash & Cash Equivalents", "Restricted Cash"
@@ -88,6 +98,108 @@ struct AssetInsightsTab: View {
                     AssetCompositionStackChart(series: data.assetSeries,
                                                composition: data.assetComposition)
                 }
+            }
+
+            DashboardCard("Statement of Cash Flows", subtitle: cashflowSubtitle) {
+                cashflowContent
+            }
+        }
+        .task(id: TaskKey(periodIds: closedPeriods.map(\.periodId), year: selectedYear)) {
+            await cashflowVM.configure(periods: closedPeriods, year: selectedYear)
+        }
+    }
+
+    /// Re-runs the cash flow fetch when either the period list or the year scope moves.
+    private struct TaskKey: Equatable {
+        let periodIds: [UUID]
+        let year: Int?
+    }
+
+    private var cashflowSubtitle: String {
+        switch cashflowVM.scope {
+        case .period:
+            return cashflowVM.selectedPeriod?.label ?? "No closed periods"
+        case .aggregate:
+            return selectedYear.map { "\($0) · aggregate" } ?? "All years · aggregate"
+        }
+    }
+
+    @ViewBuilder
+    private var cashflowContent: some View {
+        VStack(spacing: Space.md) {
+            Picker("Scope", selection: cashflowScope) {
+                ForEach(AssetCashflowViewModel.Scope.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+
+            if cashflowVM.scope == .period && !cashflowVM.periods.isEmpty {
+                HStack {
+                    PeriodPicker(periods: cashflowVM.periods, selection: cashflowPeriod)
+                    Spacer()
+                }
+            }
+
+            switch cashflowVM.state {
+            case .idle, .loading:
+                ProgressView().frame(maxWidth: .infinity, minHeight: 220)
+            case .error(let message):
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(Color.appTextTertiary)
+                    .frame(maxWidth: .infinity, minHeight: 220)
+            case .loaded(let cf):
+                CashflowWaterfallChart(cashflow: cf)
+                CashflowTotalsRow(cashflow: cf)
+            }
+        }
+    }
+
+    private var cashflowScope: Binding<AssetCashflowViewModel.Scope> {
+        Binding(
+            get: { cashflowVM.scope },
+            set: { newValue in Task { await cashflowVM.select(scope: newValue) } }
+        )
+    }
+
+    private var cashflowPeriod: Binding<UUID?> {
+        Binding(
+            get: { cashflowVM.selectedPeriodId },
+            set: { newValue in
+                guard let newValue else { return }
+                Task { await cashflowVM.select(periodId: newValue) }
+            }
+        )
+    }
+}
+
+/// Operating / Investing / Financing / Net Change under the waterfall.
+private struct CashflowTotalsRow: View {
+    let cashflow: CashflowStatementResponse
+
+    private var totals: [(label: String, value: Decimal)] {
+        [
+            ("Operating", cashflow.operatingTotal),
+            ("Investing", cashflow.investingTotal),
+            ("Financing", cashflow.financingTotal),
+            ("Net Change", cashflow.netChangeInCash),
+        ]
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Space.md) {
+            ForEach(totals, id: \.label) { total in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(total.label)
+                        .eyebrow()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text(Money.compact(total.value))
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(total.value >= 0 ? Color.appGreen : Color.appRed)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }

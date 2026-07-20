@@ -78,6 +78,10 @@ final class DashboardViewModel {
         return nil
     }
 
+    /// The currently-scoped calendar year, or nil for all-time. Tabs that fetch their
+    /// own year-scoped data (the Assets cash flow card) read this.
+    var selectedYear: Int? { year(for: selectedFilter) }
+
     /// Fetch periods, pick the default year (current year if present, else the
     /// most recent year with data, else all-time), load it, then warm the cache
     /// for the remaining years in the background so later switches are instant.

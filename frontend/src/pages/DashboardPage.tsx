@@ -11,8 +11,17 @@ import OverviewTab from './dashboard/OverviewTab'
 import ExpensesTab from './dashboard/ExpensesTab'
 import AssetsTab from './dashboard/AssetsTab'
 import ForecastTab from './dashboard/ForecastTab'
+import PeriodTab from './dashboard/PeriodTab'
 
-type DashboardTab = 'overview' | 'expenses' | 'assets' | 'forecast'
+type DashboardTab = 'overview' | 'expenses' | 'assets' | 'period' | 'forecast'
+
+const TAB_HEADING: Record<DashboardTab, { eyebrow: string; title: string }> = {
+  overview: { eyebrow: 'Overview', title: 'Welcome back' },
+  expenses: { eyebrow: 'Expenses', title: 'Where your money goes' },
+  assets: { eyebrow: 'Assets', title: 'What you own' },
+  period: { eyebrow: 'Period', title: 'Month in review' },
+  forecast: { eyebrow: 'Forecast', title: 'Where you\'re headed' },
+}
 
 // `null` selected year means "All Years".
 const ALL_YEARS = null
@@ -20,11 +29,13 @@ const ALL_YEARS = null
 export default function DashboardPage() {
   const [selectedYear, setSelectedYear] = useState<number | null>(ALL_YEARS)
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview')
+  const [selectedPeriodId, setSelectedPeriodId] = useState('')
 
   const initialised = useRef(false)
   const queryClient = useQueryClient()
   const { data: allPeriods } = useQuery({ queryKey: ['periods'], queryFn: fetchPeriods, staleTime: 60_000 })
   const closedPeriods = useMemo(() => (allPeriods ?? []).filter((p) => p.status === 'closed'), [allPeriods])
+  const effectivePeriodId = selectedPeriodId || closedPeriods[0]?.period_id || ''
 
   // Years with at least one closed period, newest first.
   const availableYears = useMemo(
@@ -46,7 +57,7 @@ export default function DashboardPage() {
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ['dashboard', selectedYear],
-    queryFn: () => fetchDashboard(selectedYear ?? undefined),
+    queryFn: () => fetchDashboard(undefined, selectedYear ?? undefined),
     staleTime: DASHBOARD_STALE_TIME,
     placeholderData: keepPreviousData,
   })
@@ -60,7 +71,7 @@ export default function DashboardPage() {
       if (year === selectedYear) continue
       queryClient.prefetchQuery({
         queryKey: ['dashboard', year],
-        queryFn: () => fetchDashboard(year ?? undefined),
+        queryFn: () => fetchDashboard(undefined, year ?? undefined),
         staleTime: DASHBOARD_STALE_TIME,
       })
     }
@@ -73,8 +84,8 @@ export default function DashboardPage() {
     <Layout activePeriod={data.active_period}>
       <div className="page">
         <PageHeader
-          eyebrow="Overview"
-          title="Welcome back"
+          eyebrow={TAB_HEADING[activeTab].eyebrow}
+          title={TAB_HEADING[activeTab].title}
           subtitle={`Financial snapshot · ${data.period_count} period${data.period_count !== 1 ? 's' : ''} tracked`}
           actions={
             <div className="row gap-2 wrap">
@@ -82,9 +93,10 @@ export default function DashboardPage() {
                 <button className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>Overview</button>
                 <button className={activeTab === 'expenses' ? 'active' : ''} onClick={() => setActiveTab('expenses')}>Expenses</button>
                 <button className={activeTab === 'assets' ? 'active' : ''} onClick={() => setActiveTab('assets')}>Assets</button>
+                <button className={activeTab === 'period' ? 'active' : ''} onClick={() => setActiveTab('period')}>Period</button>
                 <button className={activeTab === 'forecast' ? 'active' : ''} onClick={() => setActiveTab('forecast')}>Forecast</button>
               </div>
-              {availableYears.length > 0 && (
+              {activeTab !== 'period' && availableYears.length > 0 && (
                 <div className="row gap-2">
                   <SvgIcon name="periods" size={14} />
                   <select
@@ -97,6 +109,19 @@ export default function DashboardPage() {
                     <option value="all">All Years</option>
                   </select>
                   {isFetching && <span className="muted" style={{ fontSize: 12 }}>Updating…</span>}
+                </div>
+              )}
+              {activeTab === 'period' && closedPeriods.length > 0 && (
+                <div className="row gap-2">
+                  <SvgIcon name="periods" size={14} />
+                  <select
+                    className="inp inp-fit"
+                    style={{ minWidth: 120 }}
+                    value={effectivePeriodId}
+                    onChange={(e) => setSelectedPeriodId(e.target.value)}
+                  >
+                    {closedPeriods.map((p) => <option key={p.period_id} value={p.period_id}>{p.period_start.slice(0, 7)}</option>)}
+                  </select>
                 </div>
               )}
             </div>
@@ -113,7 +138,8 @@ export default function DashboardPage() {
           <>
             {activeTab === 'overview' && <OverviewTab data={data} scopeLabel={scopeLabel} />}
             {activeTab === 'expenses' && <ExpensesTab data={data} scopeLabel={scopeLabel} />}
-            {activeTab === 'assets' && <AssetsTab data={data} scopeLabel={scopeLabel} />}
+            {activeTab === 'assets' && <AssetsTab data={data} scopeLabel={scopeLabel} selectedYear={selectedYear} />}
+            {activeTab === 'period' && <PeriodTab periods={closedPeriods} periodId={effectivePeriodId} />}
             {activeTab === 'forecast' && <ForecastTab data={data} scopeLabel={scopeLabel} />}
           </>
         )}

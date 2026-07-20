@@ -19,9 +19,25 @@ final class StatementsViewModel {
         var id: String { rawValue }
     }
 
+    /// Whether a statement covers the selected period or a whole calendar year.
+    /// Aggregate is a single `year=` request — the backend rolls beginning cash
+    /// forward to the start of that year rather than starting from zero.
+    enum Scope: String, CaseIterable, Identifiable {
+        case period = "Period"
+        case aggregate = "Aggregate"
+
+        var id: String { rawValue }
+    }
+
     var closedPeriods: [Period] = []
     var selectedPeriodId: UUID? = nil
     var tab: Tab = .balanceSheet
+    var incomeScope: Scope = .period
+    var cashflowScope: Scope = .period
+
+    /// Aggregate scopes to the most recent closed year, not all-time — otherwise it
+    /// silently blends in unrelated activity from long-closed prior years.
+    var aggregateYear: Int? { closedPeriods.last?.calendarYear }
 
     var balanceSheet: LoadState<BalanceSheetPivotResponse> = .idle
     var income: LoadState<IncomeStatementResponse> = .idle
@@ -75,6 +91,15 @@ final class StatementsViewModel {
     func reloadAfterPeriodChange() async {
         switch tab {
         case .balanceSheet: break  // pivot already includes all periods; no refetch needed
+        // An aggregate statement is year-scoped, so the period selection doesn't affect it.
+        case .income: if incomeScope == .period { await loadIncome() }
+        case .cashflow: if cashflowScope == .period { await loadCashflow() }
+        }
+    }
+
+    func reloadAfterScopeChange() async {
+        switch tab {
+        case .balanceSheet: break
         case .income: await loadIncome()
         case .cashflow: await loadCashflow()
         }
@@ -104,7 +129,9 @@ final class StatementsViewModel {
         if case .loaded = income {} else { income = .loading }
         do {
             let response = try await api.perform(
-                .incomeStatement(periodId: selectedPeriodId),
+                incomeScope == .aggregate
+                    ? .incomeStatement(year: aggregateYear)
+                    : .incomeStatement(periodId: selectedPeriodId),
                 as: IncomeStatementResponse.self
             )
             income = .loaded(response)
@@ -119,7 +146,9 @@ final class StatementsViewModel {
         if case .loaded = cashflow {} else { cashflow = .loading }
         do {
             let response = try await api.perform(
-                .cashflowStatement(periodId: selectedPeriodId),
+                cashflowScope == .aggregate
+                    ? .cashflowStatement(year: aggregateYear)
+                    : .cashflowStatement(periodId: selectedPeriodId),
                 as: CashflowStatementResponse.self
             )
             cashflow = .loaded(response)
