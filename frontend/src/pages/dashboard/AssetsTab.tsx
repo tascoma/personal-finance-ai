@@ -1,15 +1,59 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { Chart } from 'chart.js'
 import EmptyState from '../../components/EmptyState'
 import SvgIcon from '../../components/SvgIcon'
 import Sparkline from '../../components/Sparkline'
 import RingChart from '../../components/RingChart'
-import { fmtMoney } from '../../utils/format'
+import { fetchCashflow } from '../../api/statements'
+import { fetchPeriods } from '../../api/periods'
+import { fmtMoney, fmtPeriod } from '../../utils/format'
 import { getChartPalette, moneyTick } from './chartTheme'
 import type { DashboardTabProps } from './constants'
 
-export default function AssetsTab({ data, scopeLabel }: DashboardTabProps) {
+interface AssetsTabProps extends DashboardTabProps {
+  selectedYear: number | null
+}
+
+export default function AssetsTab({ data, scopeLabel, selectedYear }: AssetsTabProps) {
   const assetStackRef = useRef<HTMLCanvasElement>(null)
+  const cashflowRef = useRef<HTMLCanvasElement>(null)
+
+  // In-progress periods' numbers aren't final, so cash flow only ever draws from closed periods.
+  const [cfMode, setCfMode] = useState<'rolling' | 'aggregate'>('rolling')
+  const [cfAnchorId, setCfAnchorId] = useState('')
+  const periodsQ = useQuery({ queryKey: ['periods'], queryFn: fetchPeriods, staleTime: 60_000 })
+  const closedPeriodsDesc = (periodsQ.data ?? []).filter((p) => p.status === 'closed') // API returns newest-first
+
+  // Aggregate: every closed period within the selected year (or all closed periods for "All Years").
+  // Rolling: a 3-period trailing window ending at the chosen anchor period, independent of the year filter.
+  const cfPeriods = cfMode === 'aggregate'
+    ? closedPeriodsDesc
+        .filter((p) => selectedYear == null || p.period_start.startsWith(String(selectedYear)))
+        .slice().sort((a, b) => a.period_start.localeCompare(b.period_start))
+    : (() => {
+        if (!closedPeriodsDesc.length) return []
+        const anchorIdx = cfAnchorId ? Math.max(0, closedPeriodsDesc.findIndex((p) => p.period_id === cfAnchorId)) : 0
+        return [anchorIdx + 2, anchorIdx + 1, anchorIdx]
+          .filter((i) => i >= 0 && i < closedPeriodsDesc.length)
+          .map((i) => closedPeriodsDesc[i]) // already oldest-to-newest, ending at the anchor
+      })()
+
+  const cfQs = useQueries({
+    queries: cfPeriods.map((p) => ({ queryKey: ['cashflow', p.period_id], queryFn: () => fetchCashflow(p.period_id), staleTime: 30_000 })),
+  })
+  const cfLoading = periodsQ.isLoading || cfQs.some((q) => q.isLoading)
+  const cfError = periodsQ.error || cfQs.some((q) => q.error)
+  const cfResponses = cfQs.map((q) => q.data).filter((r): r is NonNullable<typeof r> => !!r)
+
+  const cf = cfResponses.length ? {
+    beginning_cash: cfResponses[0].beginning_cash,
+    ending_cash: cfResponses[cfResponses.length - 1].ending_cash,
+    operating_total: String(cfResponses.reduce((s, r) => s + parseFloat(r.operating_total), 0)),
+    investing_total: String(cfResponses.reduce((s, r) => s + parseFloat(r.investing_total), 0)),
+    financing_total: String(cfResponses.reduce((s, r) => s + parseFloat(r.financing_total), 0)),
+    net_change_in_cash: String(cfResponses.reduce((s, r) => s + parseFloat(r.net_change_in_cash), 0)),
+  } : null
 
   useEffect(() => {
     if (!assetStackRef.current || !data.asset_series.length) return
@@ -23,10 +67,64 @@ export default function AssetsTab({ data, scopeLabel }: DashboardTabProps) {
     for (const row of data.asset_series) seriesByKey.set(`${row.period_label}|${row.sub_category}`, parseFloat(row.amount))
     const subCatColor = new Map<string, string>(data.asset_composition.map((d, i) => [d.sub_category, catColors[i % catColors.length]]))
     const colorOf = (sc: string) => subCatColor.get(sc) ?? catColors[0]
-    const datasets = subCategories.map((sc) => { const color = colorOf(sc); return { label: sc, data: periodLabels.map((pl) => seriesByKey.get(`${pl}|${sc}`) ?? 0), backgroundColor: color + 'cc', borderColor: color, borderWidth: 1, borderRadius: 2 } })
-    const chart = new Chart(assetStackRef.current, { type: 'bar', data: { labels: periodLabels, datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } }, tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: $${(ctx.parsed.y ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}` } } }, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: moneyTick } } } } })
+    const datasets = subCategories.map((sc) => { const color = colorOf(sc); return { label: sc, data: periodLabels.map((pl) => seriesByKey.get(`${pl}|${sc}`) ?? 0), backgroundColor: color + '99', borderColor: color, borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: color, pointBorderColor: color, fill: true, tension: 0.3 } })
+    const chart = new Chart(assetStackRef.current, { type: 'line', data: { labels: periodLabels, datasets }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } }, tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: $${(ctx.parsed.y ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}` } } }, scales: { x: { grid: { display: false } }, y: { stacked: true, ticks: { callback: moneyTick } } } } })
     return () => chart.destroy()
   }, [data])
+
+  // Cash flow waterfall for the scoped closed periods: Beginning -> Operating -> Investing -> Financing -> Ending.
+  useEffect(() => {
+    if (!cashflowRef.current || !cf) return
+    const palette = getChartPalette()
+    const beginning = parseFloat(cf.beginning_cash)
+    const operating = parseFloat(cf.operating_total)
+    const investing = parseFloat(cf.investing_total)
+    const financing = parseFloat(cf.financing_total)
+    const ending = parseFloat(cf.ending_cash)
+    const afterOperating = beginning + operating
+    const afterInvesting = afterOperating + investing
+    const afterFinancing = afterInvesting + financing
+    const segments = [
+      { label: 'Beginning', range: [0, beginning], amount: beginning, isTotal: true },
+      { label: '+ Operating', range: [beginning, afterOperating], amount: operating, isTotal: false },
+      { label: '+ Investing', range: [afterOperating, afterInvesting], amount: investing, isTotal: false },
+      { label: '+ Financing', range: [afterInvesting, afterFinancing], amount: financing, isTotal: false },
+      { label: 'Ending', range: [0, ending], amount: ending, isTotal: true },
+    ]
+    const colorOf = (s: (typeof segments)[number]) => s.isTotal ? palette.accent : s.amount >= 0 ? palette.green : palette.red
+    const chart = new Chart(cashflowRef.current, {
+      type: 'bar',
+      data: {
+        labels: segments.map((s) => s.label),
+        datasets: [{
+          data: segments.map((s) => [Math.min(...s.range), Math.max(...s.range)]),
+          backgroundColor: segments.map((s) => colorOf(s) + '99'),
+          borderColor: segments.map((s) => colorOf(s)),
+          borderWidth: 1.5,
+          borderRadius: 4,
+          borderSkipped: false,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const s = segments[ctx.dataIndex]
+                const sign = !s.isTotal && s.amount >= 0 ? '+' : ''
+                return ` ${sign}$${s.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+              },
+            },
+          },
+        },
+        scales: { x: { grid: { display: false } }, y: { ticks: { callback: moneyTick } } },
+      },
+    })
+    return () => chart.destroy()
+  }, [cf])
 
   const composition = data.asset_composition
   const totalAssets = parseFloat(data.total_assets)
@@ -118,6 +216,63 @@ export default function AssetsTab({ data, scopeLabel }: DashboardTabProps) {
         <div className="card col-5">
           <div className="card-hd"><div><div className="card-title">Composition Over Time</div><div className="card-sub">by sub-category</div></div></div>
           <div className="card-bd">{data.asset_series.length ? <div style={{ height: 240 }}><canvas ref={assetStackRef} /></div> : <EmptyState message="No asset data yet." />}</div>
+        </div>
+      </div>
+      <div className="card mt-4">
+        <div className="card-hd">
+          <div>
+            <div className="card-title">Statement of Cash Flows</div>
+            <div className="card-sub">
+              {cfPeriods.length
+                ? cfPeriods.length === 1
+                  ? fmtPeriod(cfPeriods[0].period_start)
+                  : `${fmtPeriod(cfPeriods[0].period_start)} – ${fmtPeriod(cfPeriods[cfPeriods.length - 1].period_start)}`
+                : 'No closed periods'}
+              {cfMode === 'rolling' ? ' · rolling' : ` · aggregate, ${scopeLabel}`}
+            </div>
+          </div>
+          <div className="row gap-3">
+            <div className="seg">
+              <button className={cfMode === 'rolling' ? 'active' : ''} onClick={() => setCfMode('rolling')}>Rolling 3</button>
+              <button className={cfMode === 'aggregate' ? 'active' : ''} onClick={() => setCfMode('aggregate')}>Aggregate</button>
+            </div>
+            {cfMode === 'rolling' && closedPeriodsDesc.length > 0 && (
+              <>
+                <span className="muted-2" style={{ fontSize: 13 }}>Ending:</span>
+                <select className="inp" style={{ width: 140 }} value={cfAnchorId || closedPeriodsDesc[0].period_id} onChange={(e) => setCfAnchorId(e.target.value)}>
+                  {closedPeriodsDesc.map((p) => <option key={p.period_id} value={p.period_id}>{p.period_start.slice(0, 7)}</option>)}
+                </select>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="card-bd">
+          {cfLoading ? (
+            <EmptyState message="Loading cash flow…" />
+          ) : cfError ? (
+            <EmptyState message="Couldn't load cash flow data." />
+          ) : !cf ? (
+            <EmptyState message="No closed periods yet." hint="Cash flow only reflects periods that have been closed." />
+          ) : (
+            <>
+              <div style={{ height: 220 }}><canvas ref={cashflowRef} /></div>
+              <div className="row gap-4" style={{ marginTop: 16, flexWrap: 'wrap' }}>
+                {[
+                  { label: 'Operating', value: parseFloat(cf.operating_total) },
+                  { label: 'Investing', value: parseFloat(cf.investing_total) },
+                  { label: 'Financing', value: parseFloat(cf.financing_total) },
+                  { label: 'Net Change', value: parseFloat(cf.net_change_in_cash) },
+                ].map((s) => (
+                  <div key={s.label} className="stack gap-1">
+                    <span className="muted" style={{ fontSize: 11 }}>{s.label}</span>
+                    <span className="mono fw-600" style={{ fontSize: 14, color: s.value >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                      {s.value >= 0 ? '+' : '-'}{fmtMoney(String(Math.abs(s.value)))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </>

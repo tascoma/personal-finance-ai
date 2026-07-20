@@ -33,12 +33,12 @@ export default function ExpensesTab({ data, scopeLabel }: DashboardTabProps) {
     const categories = trendScale === 'under1k' ? allCategories.filter((cat) => Math.max(...periodLabels.map((pl) => seriesByKey.get(`${pl}|${cat}`) ?? 0)) < 1000) : allCategories
     const datasets = categories.map((cat) => {
       const color = colorOf(cat, extraCategories.indexOf(cat))
-      return { label: cat, data: periodLabels.map((pl) => seriesByKey.get(`${pl}|${cat}`) ?? 0), borderColor: color, backgroundColor: color, borderWidth: 1.5, pointRadius: 2, fill: false, tension: 0.3 }
+      return { label: cat, data: periodLabels.map((pl) => seriesByKey.get(`${pl}|${cat}`) ?? 0), backgroundColor: color + '99', borderColor: color, borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: color, pointBorderColor: color, fill: true, tension: 0.3 }
     })
     const chart = new Chart(stackRef.current, {
       type: 'line',
       data: { labels: periodLabels, datasets },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } }, tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: $${(ctx.parsed.y ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}` } } }, scales: { x: { grid: { display: false } }, y: { ticks: { callback: moneyTick } } } },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } }, tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: $${(ctx.parsed.y ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}` } } }, scales: { x: { grid: { display: false } }, y: { stacked: true, ticks: { callback: moneyTick } } } },
     })
     return () => chart.destroy()
   }, [data, trendScale])

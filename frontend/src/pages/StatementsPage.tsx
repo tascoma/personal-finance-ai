@@ -75,12 +75,17 @@ export default function StatementsPage() {
   const [bsView, setBsView] = useState<'detailed' | 'condensed'>('detailed')
   const [incMode, setIncMode] = useState<'rolling' | 'aggregate'>('rolling')
   const [incAnchorId, setIncAnchorId] = useState<string>('')
+  const [cfMode, setCfMode] = useState<'rolling' | 'aggregate'>('rolling')
   const [cfAnchorId, setCfAnchorId] = useState<string>('')
   const [printMode, setPrintMode] = useState(false)
 
   const periodsQ = useQuery({ queryKey: ['periods'], queryFn: fetchPeriods, staleTime: 30_000 })
   const closedPeriods = periodsQ.data?.filter((p) => p.status === 'closed') ?? []
   const bsQ = useQuery({ queryKey: ['balance-sheet'], queryFn: fetchBalanceSheet, staleTime: 30_000 })
+
+  // "Aggregate" scopes to the most recent closed year, not all-time — otherwise
+  // it silently blends in unrelated activity from long-closed prior years.
+  const aggregateYear = closedPeriods.length ? Number(closedPeriods[0].period_start.slice(0, 4)) : undefined
 
   const incFetchIds: (string | undefined)[] = (() => {
     if (incMode === 'aggregate') return [undefined]
@@ -90,17 +95,18 @@ export default function StatementsPage() {
   })()
 
   const incQs = useQueries({
-    queries: incFetchIds.map((pid) => ({ queryKey: ['income-statement', pid ?? 'aggregate'], queryFn: () => fetchIncomeStatement(pid), staleTime: 30_000 })),
+    queries: incFetchIds.map((pid) => ({ queryKey: ['income-statement', pid ?? `aggregate-${aggregateYear}`], queryFn: () => fetchIncomeStatement(pid, pid ? undefined : aggregateYear), staleTime: 30_000 })),
   })
 
-  const cfFetchIds: string[] = (() => {
+  const cfFetchIds: (string | undefined)[] = (() => {
+    if (cfMode === 'aggregate') return [undefined]
     if (!closedPeriods.length) return []
     const anchorIdx = cfAnchorId ? Math.max(0, closedPeriods.findIndex((p) => p.period_id === cfAnchorId)) : 0
     return [anchorIdx + 2, anchorIdx + 1, anchorIdx].filter((i) => i >= 0 && i < closedPeriods.length).map((i) => closedPeriods[i].period_id)
   })()
 
   const cfQs = useQueries({
-    queries: cfFetchIds.map((pid) => ({ queryKey: ['cashflow', pid], queryFn: () => fetchCashflow(pid), staleTime: 30_000 })),
+    queries: cfFetchIds.map((pid) => ({ queryKey: ['cashflow', pid ?? `aggregate-${aggregateYear}`], queryFn: () => fetchCashflow(pid, pid ? undefined : aggregateYear), staleTime: 30_000 })),
   })
 
   const bs = bsQ.data
@@ -113,7 +119,8 @@ export default function StatementsPage() {
   const cfResponses = cfQs.map((q) => q.data)
   const cfLoading = cfQs.some((q) => q.isLoading)
   const cfError = cfQs.some((q) => q.error)
-  const cfPeriods = cfFetchIds.map((pid) => closedPeriods.find((p) => p.period_id === pid)).filter((p): p is NonNullable<typeof p> => !!p)
+  const cfPeriods = cfMode === 'rolling' ? cfFetchIds.map((pid) => closedPeriods.find((p) => p.period_id === pid)).filter((p): p is NonNullable<typeof p> => !!p) : []
+  const cfColCount = cfMode === 'rolling' ? cfPeriods.length : 1
   const cfReady = cfResponses.every((r) => !!r) && cfResponses.length > 0
 
   const bsAnchorIdx = (() => {
@@ -200,7 +207,7 @@ export default function StatementsPage() {
                 </div>
                 {bs && bs.periods.length > 0 && (
                   <>
-                    <span className="muted-2" style={{ fontSize: 13 }}>Ending period:</span>
+                    <span className="muted-2" style={{ fontSize: 13 }}>Ending:</span>
                     <select
                       className="inp"
                       style={{ width: 140 }}
@@ -391,13 +398,13 @@ export default function StatementsPage() {
             <div className="card-hd">
               <div>
                 <div className="card-title">Income Statement</div>
-                <div className="card-sub">{incMode === 'rolling' ? 'Rolling 3 periods' : 'All periods · aggregate'}</div>
+                <div className="card-sub">{incMode === 'rolling' ? 'Rolling 3 periods' : `${aggregateYear ?? ''} · aggregate`}</div>
               </div>
               <div className="row gap-3 print-hide">
-                <select className="inp" style={{ width: 130 }} value={incMode} onChange={(e) => setIncMode(e.target.value as 'rolling' | 'aggregate')}>
-                  <option value="rolling">Rolling 3</option>
-                  <option value="aggregate">Aggregate</option>
-                </select>
+                <div className="seg">
+                  <button className={incMode === 'rolling' ? 'active' : ''} onClick={() => setIncMode('rolling')}>Rolling 3</button>
+                  <button className={incMode === 'aggregate' ? 'active' : ''} onClick={() => setIncMode('aggregate')}>Aggregate</button>
+                </div>
                 {incMode === 'rolling' && closedPeriods.length > 0 && (
                   <>
                     <span className="muted-2" style={{ fontSize: 13 }}>Ending:</span>
@@ -492,21 +499,27 @@ export default function StatementsPage() {
             <div className="card-hd">
               <div>
                 <div className="card-title">Statement of Cash Flows</div>
-                <div className="card-sub">Rolling 3 periods · indirect method</div>
+                <div className="card-sub">{cfMode === 'rolling' ? 'Rolling 3 periods' : `${aggregateYear ?? ''} · aggregate`} · indirect method</div>
               </div>
-              {closedPeriods.length > 0 && (
-                <div className="row gap-3 print-hide">
-                  <span className="muted-2" style={{ fontSize: 13 }}>Ending:</span>
-                  <select className="inp" style={{ width: 140 }} value={cfAnchorId || closedPeriods[0].period_id} onChange={(e) => setCfAnchorId(e.target.value)}>
-                    {closedPeriods.map((p) => <option key={p.period_id} value={p.period_id}>{p.period_start.slice(0, 7)}</option>)}
-                  </select>
+              <div className="row gap-3 print-hide">
+                <div className="seg">
+                  <button className={cfMode === 'rolling' ? 'active' : ''} onClick={() => setCfMode('rolling')}>Rolling 3</button>
+                  <button className={cfMode === 'aggregate' ? 'active' : ''} onClick={() => setCfMode('aggregate')}>Aggregate</button>
                 </div>
-              )}
+                {cfMode === 'rolling' && closedPeriods.length > 0 && (
+                  <>
+                    <span className="muted-2" style={{ fontSize: 13 }}>Ending:</span>
+                    <select className="inp" style={{ width: 140 }} value={cfAnchorId || closedPeriods[0].period_id} onChange={(e) => setCfAnchorId(e.target.value)}>
+                      {closedPeriods.map((p) => <option key={p.period_id} value={p.period_id}>{p.period_start.slice(0, 7)}</option>)}
+                    </select>
+                  </>
+                )}
+              </div>
             </div>
             <div className="card-bd">
               {cfLoading && <p className="muted">Loading…</p>}
               {cfError && <p className="color-red">Failed to load cash flows.</p>}
-              {!cfLoading && !cfError && !closedPeriods.length && <EmptyState message="No closed periods found." />}
+              {!cfLoading && !cfError && cfMode === 'rolling' && !closedPeriods.length && <EmptyState message="No closed periods found." />}
               {!cfLoading && !cfError && cfReady && (() => {
                 const noncash = printMode ? pivotCashflowBySubCategory(cfResponses, 'noncash_adjustments') : pivotCashflowLines(cfResponses, 'noncash_adjustments')
                 const wc = printMode ? pivotCashflowBySubCategory(cfResponses, 'working_capital_changes') : pivotCashflowLines(cfResponses, 'working_capital_changes')
@@ -520,7 +533,7 @@ export default function StatementsPage() {
                 const netChange = cfResponses.map((r) => r!.net_change_in_cash)
                 const beginCash = cfResponses.map((r) => r!.beginning_cash)
                 const endCash = cfResponses.map((r) => r!.ending_cash)
-                const colCount = cfPeriods.length + 1
+                const colCount = cfColCount + 1
 
                 const renderRows = (rows: IncPivotRow[] | SubCategoryRow[]) => rows.map((row) => {
                   const isSub = 'sub_category' in row
@@ -544,7 +557,9 @@ export default function StatementsPage() {
                       <thead>
                         <tr>
                           <th style={{ minWidth: 220 }}>Account</th>
-                          {cfPeriods.map((p) => <th key={p.period_id} className="mono text-right" style={{ minWidth: 120, whiteSpace: 'nowrap' }}>{p.period_start.slice(0, 7)}</th>)}
+                          {cfMode === 'rolling'
+                            ? cfPeriods.map((p) => <th key={p.period_id} className="mono text-right" style={{ minWidth: 120, whiteSpace: 'nowrap' }}>{p.period_start.slice(0, 7)}</th>)
+                            : <th className="mono text-right" style={{ minWidth: 140, whiteSpace: 'nowrap' }}>{cfResponses[0]?.range_label ?? 'All Periods'}</th>}
                         </tr>
                       </thead>
                       <tbody>
