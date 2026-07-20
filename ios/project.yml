@@ -132,6 +132,11 @@ targets:
       - Tests
       - path: Core/Networking/JSONCoding.swift
         group: Core/Networking
+      - path: Core/Models/Statements.swift
+        group: Core/Models
+      # BalanceSheetPivotResponse references Period.
+      - path: Core/Models/Period.swift
+        group: Core/Models
       - path: Shared/Money.swift
         group: Shared
     settings:
