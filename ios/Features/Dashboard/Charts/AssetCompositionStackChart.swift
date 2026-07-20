@@ -1,7 +1,7 @@
 import SwiftUI
 import Charts
 
-/// Stacked bar of asset sub-categories per period (web assets "Composition Over Time").
+/// Stacked area of asset sub-categories per period (web assets "Composition Over Time").
 struct AssetCompositionStackChart: View {
     let series: [AssetSeriesPoint]
     let composition: [AssetCompositionPoint]
@@ -23,24 +23,85 @@ struct AssetCompositionStackChart: View {
         domain.enumerated().map { ChartPalette.asset[$0.offset % ChartPalette.asset.count] }
     }
 
+    private var periodLabels: [String] {
+        var seen = Set<String>()
+        return series.compactMap { seen.insert($0.periodLabel).inserted ? $0.periodLabel : nil }
+    }
+
     /// Categorical string axes aren't thinned by `.automatic(desiredCount:)`, so with
     /// 6+ periods every label renders and gets clipped. Pick a subset up front instead.
     private var xAxisLabelValues: [String] {
-        var seen = Set<String>()
-        let labels = series.compactMap { seen.insert($0.periodLabel).inserted ? $0.periodLabel : nil }
+        let labels = periodLabels
         guard labels.count > 4 else { return labels }
         let step = Int(ceil(Double(labels.count) / 4.0))
         return stride(from: 0, to: labels.count, by: step).map { labels[$0] }
     }
 
+    /// One sub-category's band in one period, `bottom` being everything stacked beneath.
+    private struct Point: Identifiable {
+        let period: String
+        let subCategory: String
+        let bottom: Double
+        let top: Double
+        var id: String { "\(period)|\(subCategory)" }
+    }
+
+    /// Cumulative band edges, zero-filled across every period.
+    ///
+    /// The API only emits a row when a sub-category has a non-zero balance
+    /// (`dashboard.py`: `if amt > _ZERO`), so the series is sparse. Left sparse, a
+    /// sub-category missing from one period drops everything above it in the stack
+    /// and jumps it back the next, which reads as bands weaving through each other.
+    /// `domain` is a fixed order, so the stack doesn't reshuffle between periods.
+    private var stackedPoints: [Point] {
+        let order = domain
+        var byKey = [String: Double]()
+        for row in series {
+            byKey["\(row.periodLabel)|\(row.subCategory)"] = row.amount.asDouble
+        }
+        return periodLabels.flatMap { period -> [Point] in
+            var running = 0.0
+            return order.map { subCategory in
+                let bottom = running
+                running += byKey["\(period)|\(subCategory)"] ?? 0
+                return Point(period: period, subCategory: subCategory, bottom: bottom, top: running)
+            }
+        }
+    }
+
+    /// Filled band, stroked top edge, and a dot at each vertex — the web chart's look.
+    /// All three marks share `.monotone` so the stroke tracks the fill it belongs to.
+    @ChartContentBuilder
+    private func mark(for point: Point) -> some ChartContent {
+        AreaMark(
+            x: .value("Period", point.period),
+            yStart: .value("From", point.bottom),
+            yEnd: .value("To", point.top)
+        )
+        .foregroundStyle(by: .value("Type", point.subCategory))
+        .interpolationMethod(.monotone)
+        .opacity(0.75)
+
+        LineMark(
+            x: .value("Period", point.period),
+            y: .value("Amount", point.top)
+        )
+        .foregroundStyle(by: .value("Type", point.subCategory))
+        .interpolationMethod(.monotone)
+        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+
+        PointMark(
+            x: .value("Period", point.period),
+            y: .value("Amount", point.top)
+        )
+        .foregroundStyle(by: .value("Type", point.subCategory))
+        .symbolSize(36)
+    }
+
     var body: some View {
         Chart {
-            ForEach(Array(series.enumerated()), id: \.offset) { _, row in
-                BarMark(
-                    x: .value("Period", row.periodLabel),
-                    y: .value("Amount", row.amount.asDouble)
-                )
-                .foregroundStyle(by: .value("Type", row.subCategory))
+            ForEach(stackedPoints) { point in
+                mark(for: point)
             }
         }
         .chartForegroundStyleScale(domain: domain, range: range)
