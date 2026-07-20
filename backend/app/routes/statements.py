@@ -60,11 +60,17 @@ async def get_balance_sheet_pivot(
 @router.get("/statements/income", response_model=IncomeStatementResponse)
 async def get_income_statement(
     period_id: Optional[uuid.UUID] = Query(None),
+    year: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db_session),
 ) -> IncomeStatementResponse:
     period_ids = [period_id] if period_id else None
-    label = "All Periods" if period_id is None else str(period_id)
-    stmt = await stmt_service.compute_income_statement(db, period_ids, label)
+    if period_id is not None:
+        label = str(period_id)
+    elif year is not None:
+        label = str(year)
+    else:
+        label = "All Periods"
+    stmt = await stmt_service.compute_income_statement(db, period_ids, label, year=year)
 
     def _section(s: stmt_service.StatementSection) -> StatementSectionSchema:
         return StatementSectionSchema(
@@ -97,11 +103,17 @@ async def get_income_statement(
 @router.get("/statements/cashflow", response_model=CashflowStatementResponse)
 async def get_cashflow_statement(
     period_id: Optional[uuid.UUID] = Query(None),
+    year: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db_session),
 ) -> CashflowStatementResponse:
     period_ids = [period_id] if period_id else None
-    label = "All Periods" if period_id is None else str(period_id)
-    stmt = await stmt_service.compute_cashflow(db, period_ids, label)
+    if period_id is not None:
+        label = str(period_id)
+    elif year is not None:
+        label = str(year)
+    else:
+        label = "All Periods"
+    stmt = await stmt_service.compute_cashflow(db, period_ids, label, year=year)
 
     def _line(ln: stmt_service.StatementLine) -> StatementLineSchema:
         return StatementLineSchema(
