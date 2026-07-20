@@ -11,6 +11,9 @@ struct StatementsView: View {
         NavigationStack {
             VStack(spacing: 12) {
                 tabBar
+                if let scope = scopeBinding {
+                    scopeBar(scope)
+                }
                 periodBar
                 Divider()
                 content
@@ -37,12 +40,43 @@ struct StatementsView: View {
         }
     }
 
+    /// The balance sheet pivot spans all periods, so it has no period/aggregate choice.
+    private var scopeBinding: Binding<StatementsViewModel.Scope>? {
+        switch vm.tab {
+        case .balanceSheet: return nil
+        case .income: return $vm.incomeScope
+        case .cashflow: return $vm.cashflowScope
+        }
+    }
+
+    private func scopeBar(_ scope: Binding<StatementsViewModel.Scope>) -> some View {
+        Picker("Scope", selection: scope) {
+            ForEach(StatementsViewModel.Scope.allCases) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal)
+        .onChange(of: scope.wrappedValue) { _, _ in
+            Task { await vm.reloadAfterScopeChange() }
+        }
+    }
+
+    /// Aggregate statements are year-scoped, so the period picker doesn't apply.
+    private var showsPeriodPicker: Bool {
+        switch vm.tab {
+        case .balanceSheet: return true
+        case .income: return vm.incomeScope == .period
+        case .cashflow: return vm.cashflowScope == .period
+        }
+    }
+
     private var periodBar: some View {
         HStack {
-            if vm.tab == .balanceSheet, case .loaded(let bs) = vm.balanceSheet {
-                PeriodPicker(periods: bs.periods, selection: $vm.selectedPeriodId)
-            } else {
-                PeriodPicker(periods: vm.closedPeriods, selection: $vm.selectedPeriodId)
+            if showsPeriodPicker {
+                if vm.tab == .balanceSheet, case .loaded(let bs) = vm.balanceSheet {
+                    PeriodPicker(periods: bs.periods, selection: $vm.selectedPeriodId)
+                } else {
+                    PeriodPicker(periods: vm.closedPeriods, selection: $vm.selectedPeriodId)
+                }
             }
             Spacer()
             if let label = currentRangeLabel {
