@@ -37,6 +37,32 @@ struct TopCategoriesBars: View {
     }
 }
 
+/// A label/value line for the Period tab's balance sheet and cash flow snapshot
+/// cards. `IncomeStatementContent` keeps its own equivalent private because it also
+/// handles parenthesised outflows; this is the plain variant.
+struct SnapshotRow: View {
+    let label: String
+    let value: String
+    var valueColor: Color = .appTextPrimary
+    var bold: Bool = false
+    var trailing: AnyView? = nil
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(bold ? .subheadline.weight(.semibold) : .subheadline)
+                .foregroundStyle(bold ? Color.appTextPrimary : Color.appTextSecondary)
+            Spacer()
+            if let trailing {
+                trailing
+            }
+            Text(value)
+                .font((bold ? Font.callout.weight(.semibold) : .subheadline.weight(.semibold)).monospacedDigit())
+                .foregroundStyle(valueColor)
+        }
+    }
+}
+
 /// Revenue / Expenses / Net Income summary (web overview "Income Statement").
 struct IncomeStatementContent: View {
     let totalIncome: Decimal

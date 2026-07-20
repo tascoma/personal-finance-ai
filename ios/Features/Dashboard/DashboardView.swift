@@ -3,34 +3,56 @@ import SwiftUI
 struct DashboardView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var vm: DashboardViewModel
+    @State private var periodVM: PeriodTabViewModel
     @State private var selectedTab: Tab = .overview
+    private let api: APIClient
 
     enum Tab: String, CaseIterable, Identifiable {
         case overview = "Overview"
         case expenses = "Expenses"
         case assets = "Assets"
+        case period = "Period"
         case forecast = "Forecast"
 
         var id: String { rawValue }
+
+        /// Mirrors the web's per-tab page heading (`TAB_HEADING` in DashboardPage.tsx).
+        var heading: String {
+            switch self {
+            case .overview: return "Welcome back"
+            case .expenses: return "Where your money goes"
+            case .assets:   return "What you own"
+            case .period:   return "Month in review"
+            case .forecast: return "Where you're headed"
+            }
+        }
     }
 
     init(api: APIClient) {
+        self.api = api
         _vm = State(initialValue: DashboardViewModel(api: api))
+        _periodVM = State(initialValue: PeriodTabViewModel(api: api))
     }
 
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle("Dashboard")
+                .navigationTitle(selectedTab.heading)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbarBackground(Color.appBackground, for: .navigationBar)
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) { yearFilterMenu }
+                    // Year scope doesn't apply to the single-period view.
+                    if selectedTab != .period {
+                        ToolbarItem(placement: .topBarLeading) { yearFilterMenu }
+                    }
                     ToolbarItem(placement: .topBarTrailing) { SignOutMenuButton() }
                 }
         }
         .task { await vm.bootstrap() }
+        .task(id: vm.closedPeriods.map(\.periodId)) {
+            await periodVM.setPeriods(vm.closedPeriods)
+        }
     }
 
     private var yearFilterMenu: some View {
@@ -103,19 +125,25 @@ struct DashboardView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal, 4)
 
-                HStack(spacing: 6) {
-                    Text("Showing").eyebrow()
-                    Text(vm.selectedFilter.label)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.appAccent)
-                    Spacer()
+                if selectedTab != .period {
+                    HStack(spacing: 6) {
+                        Text("Showing").eyebrow()
+                        Text(vm.selectedFilter.label)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.appAccent)
+                        Spacer()
+                    }
                 }
 
                 Group {
                     switch selectedTab {
                     case .overview: OverviewTab(data: data, scopeLabel: vm.selectedFilter.label)
                     case .expenses: ExpenseInsightsTab(data: data)
-                    case .assets: AssetInsightsTab(data: data)
+                    case .assets:
+                        AssetInsightsTab(data: data, api: api,
+                                         closedPeriods: vm.closedPeriods,
+                                         selectedYear: vm.selectedYear)
+                    case .period: PeriodTab(vm: periodVM)
                     case .forecast: ForecastTab(data: data)
                     }
                 }
@@ -127,6 +155,7 @@ struct DashboardView: View {
         .background(Color.appBackground)
         .refreshable {
             await vm.refresh()
+            if selectedTab == .period { await periodVM.refresh() }
         }
     }
 }
