@@ -36,12 +36,39 @@ from app.services.file_readers import (
     extract_xlsx_rows,
     read_opening_balances_xlsx,
 )
+from app.services.scrub import scrub_text
 from app.services.statement_mapper import csv_to_transactions, xlsx_to_transactions
 
 logger = logging.getLogger(__name__)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
+
+async def account_keep_terms(db: AsyncSession) -> list[str]:
+    """Chart-of-accounts names that must survive redaction.
+
+    The orchestrator matches a statement to its source account on the
+    institution / product name, so those strings are protected from the scrubber
+    even when they look like something a rule would redact.
+    """
+    result = await db.scalars(select(Account.account_name).where(Account.is_active.is_(True)))
+    return [name for name in result.all() if name]
+
+
+async def _pdf_text_for_llm(db: AsyncSession, path: Path, doc_label: str) -> str:
+    """Read a PDF and redact it before it becomes an LLM prompt.
+
+    This is the only place full statement text leaves the process, so the scrub
+    happens here rather than at each extractor.
+    """
+    text = extract_pdf_text(path)
+    if not settings.scrub_before_llm:
+        logger.warning("SCRUB_BEFORE_LLM is off — sending raw %s text to the LLM", doc_label)
+        return text
+    scrubbed, report = scrub_text(text, keep_terms=await account_keep_terms(db))
+    logger.info("Scrubbed %s %s: %s", doc_label, path.name, report.summary())
+    return scrubbed
 
 
 def _normalize_description(desc: str) -> str:
@@ -255,7 +282,7 @@ async def _extract_transactions(
         if extension != ".pdf":
             raise ParseError(f"Paystubs must be .pdf (got {extension})")
         logger.debug("Extracting paystub via LLM: %s", path.name)
-        text = extract_pdf_text(path)
+        text = await _pdf_text_for_llm(db, path, "paystub")
         extracted: ExtractedPaystubs = await run_paystub_extractor(text)
         prepared = await _prepare_paystub_lines(db, extracted, document.source_account_code)
         return prepared, settings.anthropic_model
@@ -264,7 +291,7 @@ async def _extract_transactions(
         if extension != ".pdf":
             raise ParseError(f"Mortgage statements must be .pdf (got {extension})")
         logger.debug("Extracting mortgage statement via LLM: %s", path.name)
-        text = extract_pdf_text(path)
+        text = await _pdf_text_for_llm(db, path, "mortgage statement")
         extracted_mortgage: ExtractedMortgage = await run_mortgage_extractor(text)
         prepared = _prepare_mortgage_lines(extracted_mortgage, document.period_id)
         return prepared, settings.anthropic_model
@@ -286,7 +313,7 @@ async def _extract_transactions(
 
     if extension == ".pdf":
         logger.debug("Extracting PDF statement via LLM: %s", path.name)
-        text = extract_pdf_text(path)
+        text = await _pdf_text_for_llm(db, path, "statement")
         extracted_stmt: ExtractedStatement = await run_statement_extractor(text)
         prepared = await _prepare_statement_txns(
             db, extracted_stmt.transactions, document.source_account_code

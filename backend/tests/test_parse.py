@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.agents.mortgage import ExtractedMortgage
 from app.agents.paystub import ExtractedPaystub, ExtractedPaystubs, PaystubLine
 from app.agents.statement import ExtractedStatement, ExtractedTxn
+from app.core.config import settings
 from app.databases import Base
 from app.dependencies import get_current_user, get_db_session
 from app.models.user import User
@@ -203,6 +204,42 @@ async def paystub_document(session_factory, open_period, upload_root):
     return doc
 
 
+@pytest_asyncio.fixture
+async def statement_pdf_document(session_factory, open_period, upload_root):
+    """A bank-statement PDF document. The PDF text extractor is monkeypatched."""
+    period_dir = upload_root / str(open_period.period_id)
+    period_dir.mkdir(parents=True, exist_ok=True)
+    file_path = period_dir / "statement.pdf"
+    file_path.write_bytes(b"%PDF-1.4 placeholder")
+
+    async with session_factory() as session:
+        doc = Document(
+            period_id=open_period.period_id,
+            document_type="bank_statement",
+            file_name="statement.pdf",
+            file_path=str(file_path),
+            source_account_code=100101,
+            parse_status="pending",
+        )
+        session.add(doc)
+        await session.commit()
+        await session.refresh(doc)
+    return doc
+
+
+# The identity block a real statement carries at the top of page 1.
+RAW_STATEMENT_TEXT = (
+    "1-234-56789-1234567-123-456-789-012-345\n"
+    "ANYTOWN BANK\n"
+    "1234 N MAIN ST APT#305\n"
+    "SPRINGFIELD, IL 62704-1234\n"
+    "Call 555-123-4567\n"
+    "AccountNumber 1234567890\n"
+    "Checking\n"
+    "01/05 COFFEE SHOP 5.00\n"
+)
+
+
 # ── service-level tests ──────────────────────────────────────────────────────
 
 
@@ -326,6 +363,110 @@ async def test_paystub_with_two_periods_extracts_all_lines(
         rows = (await session.scalars(select(RawTransaction))).all()
     dates = {r.txn_date for r in rows}
     assert dates == {date(2026, 1, 15), date(2025, 12, 31)}
+
+
+# ── PDF statement extraction + scrubbing ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_pdf_statement_parses_rows_and_scrubs_the_prompt(
+    session_factory, statement_pdf_document, monkeypatch
+):
+    """The full-raw-text path: whatever pdfplumber returns becomes the prompt."""
+    monkeypatch.setattr(settings, "pii_identity_terms", "Anthony Scoma")
+    monkeypatch.setattr(
+        parse_service, "extract_pdf_text", lambda path: RAW_STATEMENT_TEXT + "ANTHONY SCOMA\n"
+    )
+    extractor = AsyncMock(return_value=ExtractedStatement(
+        transactions=[
+            ExtractedTxn(txn_date=date(2026, 1, 5), description="COFFEE SHOP", amount=-5.00),
+        ]
+    ))
+    monkeypatch.setattr("app.services.parse.run_statement_extractor", extractor)
+
+    async with session_factory() as session:
+        count = await parse_service.parse_document(session, statement_pdf_document.document_id)
+    assert count == 1
+
+    prompt = extractor.await_args.args[0]
+    # Nothing identifying survives.
+    assert "1234567890" not in prompt
+    assert "555-123-4567" not in prompt
+    assert "1234 N MAIN ST" not in prompt
+    assert "SPRINGFIELD, IL" not in prompt
+    assert "ANTHONY SCOMA" not in prompt
+    # The signals the pipeline depends on do.
+    assert "[ACCT ••7890]" in prompt
+    assert "Checking" in prompt
+    assert "01/05 COFFEE SHOP 5.00" in prompt
+
+    async with session_factory() as session:
+        rows = (await session.scalars(select(RawTransaction))).all()
+        doc = await session.get(Document, statement_pdf_document.document_id)
+    # The DB keeps the extractor's verbatim description; only the prompt is scrubbed.
+    assert [r.description for r in rows] == ["COFFEE SHOP"]
+    assert doc.llm_model is not None
+
+
+@pytest.mark.asyncio
+async def test_chart_of_accounts_names_survive_the_scrub(
+    session_factory, statement_pdf_document, monkeypatch
+):
+    """`Checking` is a seeded account name — the orchestrator matches on it."""
+    monkeypatch.setattr(
+        parse_service,
+        "extract_pdf_text",
+        lambda path: "Checking 1234 N MAIN ST\nAccountNumber 1234567890\n",
+    )
+    extractor = AsyncMock(return_value=ExtractedStatement(transactions=[]))
+    monkeypatch.setattr("app.services.parse.run_statement_extractor", extractor)
+
+    async with session_factory() as session:
+        await parse_service.parse_document(session, statement_pdf_document.document_id)
+
+    prompt = extractor.await_args.args[0]
+    assert "Checking" in prompt
+    assert "1234567890" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_scrub_before_llm_false_sends_raw_text(
+    session_factory, statement_pdf_document, monkeypatch
+):
+    monkeypatch.setattr(settings, "scrub_before_llm", False)
+    monkeypatch.setattr(parse_service, "extract_pdf_text", lambda path: RAW_STATEMENT_TEXT)
+    extractor = AsyncMock(return_value=ExtractedStatement(transactions=[]))
+    monkeypatch.setattr("app.services.parse.run_statement_extractor", extractor)
+
+    async with session_factory() as session:
+        await parse_service.parse_document(session, statement_pdf_document.document_id)
+
+    assert extractor.await_args.args[0] == RAW_STATEMENT_TEXT
+
+
+@pytest.mark.asyncio
+async def test_paystub_prompt_is_scrubbed(session_factory, paystub_document, monkeypatch):
+    monkeypatch.setattr(
+        parse_service, "extract_pdf_text", lambda path: "Emp #: 123456789\nREGULAR EARNING 3,000.00\n"
+    )
+    extractor = AsyncMock(return_value=ExtractedPaystubs(paystubs=[]))
+    monkeypatch.setattr("app.services.parse.run_paystub_extractor", extractor)
+
+    async with session_factory() as session:
+        await parse_service.parse_document(session, paystub_document.document_id)
+
+    prompt = extractor.await_args.args[0]
+    assert "123456789" not in prompt
+    # Payroll labels and amounts are the extraction payload — never touched.
+    assert "REGULAR EARNING 3,000.00" in prompt
+
+
+@pytest.mark.asyncio
+async def test_account_keep_terms_returns_active_account_names(session_factory):
+    async with session_factory() as session:
+        terms = await parse_service.account_keep_terms(session)
+    assert "Checking" in terms
+    assert "Mastercard" in terms
 
 
 @pytest.mark.asyncio

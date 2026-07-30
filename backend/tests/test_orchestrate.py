@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agents._base import AgentError
 from app.agents.orchestrator import DocumentPlan, OrchestrationPlan
+from app.core.config import settings
 from app.databases import Base
 from app.dependencies import get_current_user, get_db_session
 from app.main import app
@@ -436,6 +437,76 @@ async def test_orchestrate_no_pending_documents_is_noop(
     assert result.failed == 0
     assert result.steps == []
     called.assert_not_awaited()
+
+
+# ── digest scrubbing ─────────────────────────────────────────────────────────
+#
+# The 2500-char peek is the highest-PII payload in the pipeline: the top of a
+# statement is exactly where the holder's name, address, and full account number
+# sit. These tests need no DB — `_build_digest` only reads the file from disk.
+
+
+def _digest_for(tmp_path, name: str, contents: str, keep_terms=()):
+    path = tmp_path / name
+    path.write_text(contents)
+    doc = Document(
+        document_id=uuid.uuid4(),
+        period_id=uuid.uuid4(),
+        document_type="unknown",
+        file_name=name,
+        file_path=str(path),
+        parse_status="pending",
+    )
+    return orchestrate_service._build_digest(doc, keep_terms)
+
+
+def test_csv_digest_peek_is_scrubbed(tmp_path):
+    digest = _digest_for(
+        tmp_path,
+        "bank.csv",
+        "Date,Description,ChkRef,Amount\n"
+        "1/2/26,COFFEE SHOP 88293847192830429,,($5.00)\n",
+    )
+    assert "88293847192830429" not in digest.content_peek
+    assert "[NUM ••0429]" in digest.content_peek
+    # The merchant, date, and amount all still route the document.
+    assert "COFFEE SHOP" in digest.content_peek
+    assert "($5.00)" in digest.content_peek
+
+
+def test_csv_digest_keeps_institution_name_via_keep_terms(tmp_path):
+    digest = _digest_for(
+        tmp_path,
+        "bank.csv",
+        "Date,Description,Amount\n1/2/26,Bank OZK Checking transfer,($5.00)\n",
+        keep_terms=["Bank OZK Checking"],
+    )
+    assert "Bank OZK Checking" in digest.content_peek
+
+
+def test_digest_file_name_is_scrubbed_but_keeps_its_last4(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "pii_identity_terms", "Anthony Scoma")
+    digest = _digest_for(
+        tmp_path, "Anthony Scoma Credit Card - 6120.csv", "Date,Description,Amount\n1/2/26,X,1\n"
+    )
+    assert "Anthony Scoma" not in digest.file_name
+    # "6120" is the account last-4 the orchestrator matches on.
+    assert "6120" in digest.file_name
+
+
+def test_digest_is_not_scrubbed_when_the_flag_is_off(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "scrub_before_llm", False)
+    digest = _digest_for(
+        tmp_path, "bank.csv", "Date,Description,Amount\n1/2/26,REF 88293847192830429,1\n"
+    )
+    assert "88293847192830429" in digest.content_peek
+
+
+def test_unreadable_file_still_reports_its_error_unscrubbed(tmp_path):
+    # A "(could not read file: ...)" peek is our own diagnostic, not statement
+    # content — scrubbing it would only obscure the failure.
+    digest = _digest_for(tmp_path, "empty.csv", "")
+    assert "could not read file" in digest.content_peek
 
 
 # ── HTTP route tests ─────────────────────────────────────────────────────────

@@ -37,6 +37,7 @@ from app.agents.orchestrator import (
     OrchestrationPlan,
     run_orchestrator,
 )
+from app.core.config import settings
 from app.models.account import Account
 from app.models.document import Document
 from app.schemas.orchestrate import OrchestrationResult
@@ -48,6 +49,7 @@ from app.services.file_readers import (
     extract_pdf_text,
     extract_xlsx_rows,
 )
+from app.services.scrub import scrub_description, scrub_text
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +57,14 @@ PDF_PEEK_CHARS = 2500
 TABULAR_PEEK_ROWS = 15
 
 
-def _build_digest(document: Document) -> DocumentDigest:
-    """Read a small content peek from disk for the orchestrator's routing decision."""
+def _build_digest(document: Document, keep_terms: Sequence[str] = ()) -> DocumentDigest:
+    """Read a small content peek from disk for the orchestrator's routing decision.
+
+    The peek is the highest-PII payload in the pipeline — the top of a statement
+    is exactly where the account holder's name, mailing address, and full account
+    number sit — so it is redacted before it leaves. `keep_terms` protects the
+    institution and product names the orchestrator matches on.
+    """
     path = Path(document.file_path)
     extension = path.suffix.lower()
     peek = ""
@@ -106,9 +114,23 @@ def _build_digest(document: Document) -> DocumentDigest:
             len(peek),
         )
 
+    file_name = document.file_name
+    if settings.scrub_before_llm and not read_failed:
+        # Scrub after the peek is already sliced so the regex work stays bounded
+        # by PDF_PEEK_CHARS rather than running over the whole document.
+        peek, report = scrub_text(peek, keep_terms=keep_terms)
+        # A filename like "Tony Scoma Statement.pdf" leaks through the digest too,
+        # while "Credit Card - 6120_04-01-2026.csv" keeps its useful last-4.
+        file_name = scrub_description(file_name, keep_terms=keep_terms)
+        logger.info(
+            "Scrubbed digest peek for document %s: %s",
+            document.document_id,
+            report.summary(),
+        )
+
     return DocumentDigest(
         document_id=document.document_id,
-        file_name=document.file_name,
+        file_name=file_name,
         file_extension=extension,
         content_peek=peek,
     )
@@ -169,8 +191,11 @@ async def orchestrate_parse_stream(
         return
 
     docs_by_id: dict[uuid.UUID, Document] = {d.document_id: d for d in pending}
-    digests = [_build_digest(d) for d in pending]
+    # Accounts load first: their names are the scrubber's keep_terms, so an
+    # institution or product name is never redacted out of a digest peek.
     account_choices, accounts_by_code = await _load_account_choices(db)
+    keep_terms = [c.account_name for c in account_choices]
+    digests = [_build_digest(d, keep_terms) for d in pending]
 
     logger.info(
         "Calling orchestrator for period %s with %d pending docs and %d active accounts",
