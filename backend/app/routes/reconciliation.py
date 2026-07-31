@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents._base import AgentError
 from app.agents.reconciliation import ReconciliationAnalysis, run_reconciliation_agent
+from app.core.config import settings
 from app.dependencies import get_current_user, get_db_session
 from app.models.reconciliation import Reconciliation
 from app.schemas.api_responses import (
@@ -19,6 +20,7 @@ from app.schemas.period import PeriodRead
 from app.schemas.reconciliation import ReconciliationDetail, TempAccountPreview, EquityRollupPreview
 from app.services import period as period_service
 from app.services import reconciliation as recon_service
+from app.services.scrub import scrub_description
 
 logger = logging.getLogger(__name__)
 
@@ -156,13 +158,22 @@ async def analyze_reconciliation(
             .order_by(JE.entry_date.desc())
             .limit(5)
         )
+        account_name = info.get("account_name", "")
+        recent_descriptions = list(recent_entries_result.all())
+        if settings.scrub_before_llm:
+            # These descriptions are derived from statement text, so they carry
+            # the same identifiers. The account name is a keep_term — it comes
+            # from the chart of accounts and the agent needs it to reason.
+            recent_descriptions = [
+                scrub_description(d, keep_terms=[account_name]) for d in recent_descriptions
+            ]
         gaps.append(AccountGap(
             account_code=row.account_code,
-            account_name=info.get("account_name", ""),
+            account_name=account_name,
             computed_balance=row.computed_balance,
             stated_balance=row.stated_balance,
             gap=row.gap,
-            recent_entry_descriptions=list(recent_entries_result.all()),
+            recent_entry_descriptions=recent_descriptions,
         ))
 
     analysis: ReconciliationAnalysis | None = None

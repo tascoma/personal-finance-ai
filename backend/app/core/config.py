@@ -50,6 +50,21 @@ class Settings(BaseSettings):
     # Maximum file upload size in megabytes
     max_upload_size_mb: int = 20
 
+    # Comma-separated literal strings redacted from every prompt before it reaches
+    # the LLM (legal name, aliases, street address). The regex rules in
+    # app.services.scrub catch structured identifiers — account numbers, SSNs,
+    # phones, ZIPs — but a person's name has no structure, so it is matched
+    # literally. Empty means pattern rules only.
+    pii_identity_terms: str = ""
+
+    # Escape hatch. Set false only to diagnose an extraction regression caused by
+    # over-redaction — it sends raw statement text to Anthropic.
+    scrub_before_llm: bool = True
+
+    @property
+    def pii_identity_term_list(self) -> list[str]:
+        return [t.strip() for t in self.pii_identity_terms.split(",") if t.strip()]
+
     # Apple Push Notification service (APNs). All four key/team/bundle/p8
     # settings must be set for `app.services.apns.notify_user()` to attempt
     # delivery — otherwise it's a graceful no-op. The .p8 value is the file

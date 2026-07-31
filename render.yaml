@@ -21,6 +21,12 @@ services:
         value: claude-sonnet-4-6
       - key: ALLOWED_ORIGINS
         sync: false
+      # Literal names/addresses redacted from every LLM prompt. Regex rules in
+      # app.services.scrub handle account numbers, PANs, SSNs, and addresses.
+      - key: PII_IDENTITY_TERMS
+        sync: false
+      - key: SCRUB_BEFORE_LLM
+        value: "true"
       - key: LOG_LEVEL
         value: INFO
       # APNs (iOS push) — leave unset until Apple Developer credentials are
@@ -58,6 +64,12 @@ services:
         value: claude-sonnet-4-6
       - key: ALLOWED_ORIGINS
         sync: false
+      # Literal names/addresses redacted from every LLM prompt. Regex rules in
+      # app.services.scrub handle account numbers, PANs, SSNs, and addresses.
+      - key: PII_IDENTITY_TERMS
+        sync: false
+      - key: SCRUB_BEFORE_LLM
+        value: "true"
       - key: LOG_LEVEL
         value: INFO
       # APNs (iOS push). Stage targets APNs sandbox so Debug/Staging iOS

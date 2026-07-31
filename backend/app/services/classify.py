@@ -7,9 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.classifier import ClassifierOutput, TxnInput, run_classifier
+from app.core.config import settings
 from app.models.account import Account
 from app.models.document import Document
 from app.models.raw_transaction import RawTransaction
+from app.services.scrub import scrub_description
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,7 @@ async def classify_period(
         return 0
 
     coa_table = _build_coa_table(all_accounts)
+    keep_terms = [a.account_name for a in all_accounts if a.account_name]
     eligible_by_short_id: dict[str, RawTransaction] = {
         t.raw_txn_id.hex[:8]: t for t in eligible
     }
@@ -92,9 +95,11 @@ async def classify_period(
         # so they can carry prompt-injection text. The blast radius is bounded: the
         # agent returns a structured ClassifierOutput and any account_code it picks is
         # validated against valid_codes below — an out-of-range code is flagged, not posted.
+        # `_format_txn_inputs` also redacts identifiers out of each description; the
+        # round trip is keyed on `id`, never on the description text.
         user_prompt = (
             f"Chart of accounts:\n{coa_table}\n\n"
-            f"Transactions to classify:\n{_format_txn_inputs(batch)}"
+            f"Transactions to classify:\n{_format_txn_inputs(batch, keep_terms)}"
         )
         try:
             output = await run_classifier(user_prompt)
@@ -148,10 +153,21 @@ def _build_coa_table(accounts: Sequence[Account]) -> str:
     return "\n".join(lines)
 
 
-def _format_txn_inputs(inputs: list[TxnInput]) -> str:
+def _format_txn_inputs(inputs: list[TxnInput], keep_terms: Sequence[str] = ()) -> str:
+    """Render the batch as a pipe table, redacting each description on the way out.
+
+    Only the prompt is redacted — `raw_transactions.description` keeps the
+    verbatim statement text, so dedup hashes and the audit trail are unaffected.
+    `source_account_name` comes from the chart of accounts and is never scrubbed.
+    """
     lines = ["id | description | amount | source_account | source_type"]
     for t in inputs:
+        description = (
+            scrub_description(t.description, keep_terms=keep_terms)
+            if settings.scrub_before_llm
+            else t.description
+        )
         lines.append(
-            f"{t.id} | {t.description} | {t.amount} | {t.source_account_name} | {t.source_account_type}"
+            f"{t.id} | {description} | {t.amount} | {t.source_account_name} | {t.source_account_type}"
         )
     return "\n".join(lines)
