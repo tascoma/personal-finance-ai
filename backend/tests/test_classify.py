@@ -11,7 +11,8 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.agents.classifier import ClassifierOutput, TxnSuggestion
+from app.agents.classifier import ClassifierOutput, TxnInput, TxnSuggestion
+from app.core.config import settings
 from app.databases import Base
 from app.dependencies import get_current_user, get_db_session
 from app.models.user import User
@@ -339,3 +340,96 @@ async def test_update_account_route(client, journal_period, session_factory):
         updated = await session.get(RawTransaction, txn.raw_txn_id)
     assert updated.suggested_account_code == 520101
     assert updated.is_flagged is False
+
+
+# ── scrubbing at the classifier boundary ─────────────────────────────────────
+#
+# This is where transaction descriptions actually reach an LLM, so it is the
+# boundary the scrubber exists to protect. The prompt is redacted; the row in the
+# database is not — dedup hashes and the audit trail depend on verbatim text.
+
+
+def _txn_input(description: str) -> TxnInput:
+    return TxnInput(
+        id="abcd1234",
+        description=description,
+        amount=Decimal("-160.00"),
+        source_account_name="Checking",
+        source_account_type="Asset",
+    )
+
+
+def test_classifier_prompt_redacts_a_p2p_counterparty_name():
+    prompt = classify_service._format_txn_inputs(
+        [_txn_input("XX3178 MT DDA DEBIT VENMO  Zach John New York NY CNP TX 327676")]
+    )
+    assert "Zach John" not in prompt
+    assert "[NAME]" in prompt
+    # The rail survives — it is how the classifier recognizes a P2P transfer.
+    assert "VENMO" in prompt
+
+
+def test_classifier_prompt_redacts_account_numbers():
+    prompt = classify_service._format_txn_inputs([_txn_input("ACH XFER ACCT 1234567890")])
+    assert "1234567890" not in prompt
+    assert "••7890" in prompt
+
+
+def test_classifier_prompt_keeps_merchant_names_and_amounts():
+    # Over-redacting here costs the classifier the only signal it has.
+    prompt = classify_service._format_txn_inputs([_txn_input("WAL-MART #5837  ROGERS  AR")])
+    assert "WAL-MART #5837  ROGERS  AR" in prompt
+    assert "-160.00" in prompt
+    assert "Checking" in prompt
+
+
+def test_classifier_prompt_is_raw_when_the_flag_is_off(monkeypatch):
+    monkeypatch.setattr(settings, "scrub_before_llm", False)
+    prompt = classify_service._format_txn_inputs([_txn_input("VENMO  Zach John New York NY")])
+    assert "Zach John" in prompt
+
+
+@pytest.mark.asyncio
+async def test_classify_scrubs_the_prompt_but_stores_the_verbatim_description(
+    session_factory, journal_period, monkeypatch
+):
+    raw = "XX3178 MT DDA DEBIT VENMO  Zach John New York NY CNP TX 327676"
+    async with session_factory() as session:
+        doc = Document(
+            period_id=journal_period.period_id,
+            document_type="bank_statement",
+            file_name="bank.csv",
+            file_path="/tmp/bank.csv",
+            source_account_code=100101,
+            parse_status="complete",
+        )
+        session.add(doc)
+        await session.commit()
+        await session.refresh(doc)
+
+    txn = await _add_staged_txn(session_factory, doc, raw, Decimal("-160.00"))
+
+    seen = {}
+
+    async def fake_classifier(prompt: str) -> ClassifierOutput:
+        seen["prompt"] = prompt
+        return ClassifierOutput(
+            suggestions=[
+                TxnSuggestion(
+                    id=txn.raw_txn_id.hex[:8],
+                    account_code=520101,
+                    confidence=Decimal("0.9"),
+                    reasoning="p2p",
+                )
+            ]
+        )
+
+    monkeypatch.setattr(classify_service, "run_classifier", fake_classifier)
+    async with session_factory() as session:
+        await classify_service.classify_period(session, journal_period.period_id)
+
+    assert "Zach John" not in seen["prompt"]
+    async with session_factory() as session:
+        stored = await session.get(RawTransaction, txn.raw_txn_id)
+    # Verbatim in the database — the dedup hash in `parse` is computed from it.
+    assert stored.description == raw
