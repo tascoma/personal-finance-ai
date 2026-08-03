@@ -47,6 +47,18 @@ STREET_SUFFIXES = (
 # employee number printed beside the mailing address on every paystub.
 ID_LABELS = "account|acct|card|member|loan|policy|routing|emp|employee"
 
+# Columns whose values are identifiers, matched by header name. In a spreadsheet the
+# header already says what the column is, so `redact_columns` masks it structurally
+# rather than hoping a digit-run rule catches it: the generic rule needs 9+ digits,
+# so a 7- or 8-digit account number would otherwise pass through in full.
+SENSITIVE_COLUMN_ALIASES = (
+    "account number", "account no", "account num", "account", "acct", "acct no",
+    "card number", "card no", "card", "member number", "member id", "member no",
+    "routing", "routing number", "aba",
+    "check", "check number", "check no", "chkref", "chk ref", "ref", "reference",
+    "ssn", "tax id", "tin", "customer id", "customer number",
+)
+
 
 # ── patterns ────────────────────────────────────────────────────────────────
 
@@ -66,7 +78,9 @@ _PAN_RE = re.compile(
 _LABELLED_ID_RE = re.compile(
     rf"\b({ID_LABELS})"                                      # 1: the label
     r"(\s*(?:nos?\.?|numbers?|#|ids?|ending(?:\s+in)?))?"     # 2: optional qualifier
-    r"(\s*[:#-]?\s*)"                                        # 3: separator
+    # `=` is in the class because tabular peeks render as "Account Number=2122902212";
+    # without it the label sits right beside the value and buys nothing.
+    r"(\s*[:#=-]?\s*)"                                       # 3: separator
     r"([Xx*•\d](?:[Xx*•\d-]|\ (?=[Xx*•\d])){3,})"   # 4: the value
     # A letter straight after the digits means this is not an identifier: in a
     # space-collapsed PDF, "LoanNumber:6203S37THST" is the property address, and
@@ -87,6 +101,36 @@ _LONG_NUMBER_RE = re.compile(r"(?<![\d$])(?<![\d][.,])\d[\d-]{7,}\d(?![\d])(?![.
 
 # Dates _LONG_NUMBER_RE would otherwise swallow, e.g. 04-30-2026.
 _DATE_LIKE_RE = re.compile(r"^(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}-\d{1,2}-\d{2,4})$")
+
+# Peer-to-peer rails put a counterparty's real name in the memo — "VENMO Zach John
+# New York NY CNP TX 327676". No pattern rule finds a bare name, but the rail token
+# in front of it is a reliable anchor, so the name is redacted by position instead.
+P2P_RAILS = (
+    "WESTERN UNION|SQUARE CASH|APPLE CASH|CASH ?APP|MONEYGRAM|POPMONEY"
+    "|VENMO|ZELLE|PAYPAL"
+)
+
+# Rail protocol words that sit between the rail and the name. Skipped rather than
+# treated as the name, so "ZELLE PAYMENT FROM John Smith" still redacts the person.
+_P2P_SKIP = (
+    "PAYMENTS?|TRANSFERS?|FROM|TO|SENT|RECEIVED|CASH ?OUT|CASHOUT"
+    "|XFER|DEBIT|CREDIT|INST|PMT|DES|ID|REF"
+)
+
+# A name-shaped word needs a lowercase letter straight after the capital, which is
+# what separates "Zach"/"John" from the all-caps trailing refs ("NY", "CNP", "TX")
+# and from tokens that open with a digit ("1INFINITELOOP"). That guard is also what
+# terminates the run — matching stops at the first token that isn't name-shaped.
+_NAME_WORD = r"[A-Z][a-z][A-Za-z'\-]*"
+
+# The rail and the skip words are case-insensitive; the name group must NOT be, or
+# the lowercase-letter guard stops discriminating. Hence the scoped `(?i:...)`
+# groups rather than a flag on the whole pattern.
+_P2P_COUNTERPARTY_RE = re.compile(
+    rf"\b(?i:{P2P_RAILS})\b"
+    rf"(?:[ \t]+(?i:{_P2P_SKIP})\b)*"
+    rf"(?P<name>(?:[ \t]+{_NAME_WORD}){{1,4}})"
+)
 
 _EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]{2,}\b")
 
@@ -194,6 +238,82 @@ def last4(value: str) -> str:
     return f"{MASK}{digits[-4:]}" if len(digits) >= 4 else f"{MASK}{MASK}"
 
 
+def normalize_header(value: object) -> str:
+    """Fold a spreadsheet header to its comparable form.
+
+    ``Post Date``, ``post_date``, ``POST-DATE`` and ``Post.Date`` are the same
+    column wearing four hats. `app.services.statement_mapper` matches its column
+    aliases through this too, so both modules agree on what a header "is".
+    """
+    text = "" if value is None else str(value)
+    return re.sub(r"[\s_\-./#]+", " ", text).strip().lower()
+
+
+_SENSITIVE_HEADERS = frozenset(normalize_header(a) for a in SENSITIVE_COLUMN_ALIASES)
+
+
+def is_sensitive_column(header: object) -> bool:
+    """True when a column's header names it an identifier column."""
+    return normalize_header(header) in _SENSITIVE_HEADERS
+
+
+def looks_like_bare_identifier(text: str) -> bool:
+    """True for a value that is only a long run of digits — an ID, not a number.
+
+    Money carries a decimal ("54.20") and dates carry separators in date positions,
+    so both are left readable. Six digits is the floor: shorter runs are as likely
+    to be a whole-dollar amount as a reference.
+    """
+    stripped = text.strip()
+    if not stripped or _DATE_LIKE_RE.match(stripped) or "/" in stripped:
+        return False
+    if not re.fullmatch(r"[\d-]+", stripped):
+        return False
+    return len(re.sub(r"\D", "", stripped)) >= 6
+
+
+def redact_columns(
+    headers: Sequence[object],
+    rows: Sequence[Sequence[object]],
+    *,
+    mask_bare_identifiers: bool = False,
+) -> tuple[list[list[str]], ScrubReport]:
+    """Mask identifier columns by header name, before any pattern rule runs.
+
+    Structural redaction, not pattern matching: the header names the column, so
+    masking does not depend on the value's length or punctuation. A 7-digit
+    account number and a 16-digit one are both reduced to their last 4 — which
+    `app.agents.orchestrator` still needs to match a statement to its account.
+
+    Only cells containing a digit are masked. A column headed ``Account`` may
+    hold the account's *name* ("Bank OZK Checking"), and that is a routing signal
+    the orchestrator depends on, not an identifier.
+
+    `mask_bare_identifiers` adds a value-shape rule on top, for callers handling a
+    file whose headers are not recognized at all — "Numero de Cuenta" is an account
+    column that no alias list knows, and its digits may be too few for the generic
+    rule to catch. Off by default: on a known layout the header is the better
+    signal, and this would also mask a whole-dollar amount.
+    """
+    report = ScrubReport()
+    sensitive = {i for i, h in enumerate(headers) if is_sensitive_column(h)}
+
+    out: list[list[str]] = []
+    for row in rows:
+        redacted: list[str] = []
+        for i, cell in enumerate(row):
+            text = "" if cell is None else str(cell)
+            by_header = i in sensitive and any(c.isdigit() for c in text)
+            by_shape = mask_bare_identifiers and looks_like_bare_identifier(text)
+            if by_header or by_shape:
+                redacted.append(last4(text))
+                report.counts["column"] = report.counts.get("column", 0) + 1
+            else:
+                redacted.append(text)
+        out.append(redacted)
+    return out, report
+
+
 # ── rule engine ─────────────────────────────────────────────────────────────
 
 
@@ -215,6 +335,9 @@ def _scrub(text: str, *, keep_terms: Sequence[str], addresses: bool) -> tuple[st
     working = _sub_literal(_SSN_RE, "[SSN]", working, report, "ssn")
     working = _sub_callback(_PAN_RE, _replace_pan, working, report, "card")
     working = _sub_callback(_LABELLED_ID_RE, _replace_labelled_id, working, report, "account")
+    working = _sub_callback(
+        _P2P_COUNTERPARTY_RE, _replace_p2p_counterparty, working, report, "counterparty"
+    )
     working = _sub_literal(_EMAIL_RE, "[EMAIL]", working, report, "email")
     working = _sub_literal(_PHONE_RE, "[PHONE]", working, report, "phone")
 
@@ -325,6 +448,20 @@ def _replace_labelled_id(match: re.Match[str]) -> str:
     if MASK in value or len(re.sub(r"\D", "", value)) < 4:
         return match.group(0)
     return f"{label}{qualifier or ''}{separator or ' '}[ACCT {last4(value)}]"
+
+
+def _replace_p2p_counterparty(match: re.Match[str]) -> str:
+    """Mask the name run after a P2P rail, keeping the rail and everything after it.
+
+    The counterparty's city is swallowed along with the name — "Zach John New York"
+    all becomes ``[NAME]`` — which is the right call: on a person-to-person transfer
+    the city identifies the person, not a merchant location worth classifying on.
+    """
+    name = match.group("name")
+    if MASK in name or "[NAME]" in name:
+        return match.group(0)
+    prefix = match.group(0)[: match.start("name") - match.start(0)]
+    return f"{prefix} [NAME]"
 
 
 def _replace_long_number(match: re.Match[str]) -> str:

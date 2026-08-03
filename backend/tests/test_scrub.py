@@ -7,7 +7,13 @@ is a settings value, so the few tests that exercise it patch `settings` directly
 import pytest
 
 from app.core.config import settings
-from app.services.scrub import scrub_description, scrub_text
+from app.services.scrub import (
+    is_sensitive_column,
+    normalize_header,
+    redact_columns,
+    scrub_description,
+    scrub_text,
+)
 
 
 def scrubbed(text: str, **kwargs) -> str:
@@ -331,6 +337,143 @@ def test_report_summary_is_sorted_and_compact():
 # ── idempotence ─────────────────────────────────────────────────────────────
 
 
+# ── identifier columns (structural redaction) ───────────────────────────────
+
+
+# The bank's own export is 10 digits, which the generic 9+ digit rule happens to
+# catch. Nothing about that is a design: 7 and 8 digits passed through in full
+# before `redact_columns`, and they are the cases that matter here.
+@pytest.mark.parametrize(
+    "account",
+    ["1234", "2122902", "21229022", "212290221", "2122902212", "1234567890123456", "212-2212"],
+)
+def test_identifier_columns_are_masked_at_every_length(account):
+    headers = ["Account Number", "Post Date", "Description", "Amount"]
+    rows, report = redact_columns(headers, [[account, "7/30/2026", "PAYROLL", "2541.90"]])
+
+    assert rows[0][0] == f"••{account[-4:].lstrip('-')}"
+    assert report.counts["column"] == 1
+    # The full value is gone unless it was only ever 4 digits to begin with.
+    if len(account.replace("-", "")) > 4:
+        assert account not in rows[0][0]
+
+
+def test_identifier_column_with_too_few_digits_is_fully_masked():
+    rows, _ = redact_columns(["Account Number"], [["12"]])
+    assert rows[0][0] == "••••"
+
+
+@pytest.mark.parametrize(
+    "header",
+    ["Account Number", "account_no", "ACCT#", "Card Number", "Check", "ChkRef", "Routing Number"],
+)
+def test_sensitive_headers_are_recognized_however_they_are_written(header):
+    assert is_sensitive_column(header)
+    rows, _ = redact_columns([header], [["2122902212"]])
+    assert rows[0][0] == "••2212"
+
+
+@pytest.mark.parametrize("header", ["Description", "Amount", "Date", "Post Date", "Balance", "Debit"])
+def test_transaction_columns_are_left_alone(header):
+    assert not is_sensitive_column(header)
+    rows, report = redact_columns([header], [["2122902212"]])
+    assert rows[0][0] == "2122902212"
+    assert report.total == 0
+
+
+def test_account_column_holding_a_name_is_not_masked():
+    # An "Account" column may hold the account's name, which is the signal the
+    # orchestrator matches a statement on. Only values with digits are identifiers.
+    rows, report = redact_columns(["Account"], [["Bank OZK Checking"]])
+    assert rows[0][0] == "Bank OZK Checking"
+    assert report.total == 0
+
+
+@pytest.mark.parametrize(
+    "value,masked",
+    [
+        ("21229022", True),        # bare identifier
+        ("2122902212", True),
+        ("212-2212", True),
+        ("327676", True),
+        ("2026-03-01", False),     # a date, which the agent needs to recognize
+        ("7/30/2026", False),
+        ("54.20", False),          # money keeps its decimal
+        ("1200.00", False),
+        ("2541", False),           # too short to tell from a whole-dollar amount
+        ("SUPERMERCADO", False),
+        ("", False),
+    ],
+)
+def test_bare_identifier_masking_for_unrecognized_headers(value, masked):
+    # Used only when the header row itself is unknown, so the value's shape is the
+    # only signal left. "Numero de Cuenta" is in no alias list.
+    rows, _ = redact_columns(["Numero de Cuenta"], [[value]], mask_bare_identifiers=True)
+    assert (rows[0][0] != value) is masked
+
+
+def test_bare_identifier_masking_is_off_by_default():
+    rows, _ = redact_columns(["Numero de Cuenta"], [["21229022"]])
+    assert rows[0][0] == "21229022"
+
+
+def test_normalize_header_folds_separators_and_case():
+    assert normalize_header("Post Date") == "post date"
+    assert normalize_header("post_date") == "post date"
+    assert normalize_header("POST-DATE") == "post date"
+    assert normalize_header(None) == ""
+
+
+def test_labelled_id_rule_handles_the_tabular_equals_form():
+    # A digest peek renders as "Account Number=21229022". Eight digits is under the
+    # generic rule's floor, so the label is the only thing that can catch it.
+    assert "[ACCT ••9022]" in scrubbed("Account Number=21229022, Post Date=7/30/2026")
+    assert "21229022" not in scrubbed("Account Number=21229022")
+
+
+# ── peer-to-peer counterparty names ─────────────────────────────────────────
+
+
+def test_p2p_counterparty_name_is_redacted():
+    text = "XX3178 MT DDA DEBIT VENMO  Zach John New York NY CNP TX 327676"
+    result = scrub_description(text)
+    assert "Zach John" not in result
+    assert "[NAME]" in result
+    # The rail and the trailing references survive — they are what the classifier
+    # reads to recognize this as a peer-to-peer transfer.
+    assert "VENMO" in result and "CNP TX" in result
+
+
+def test_p2p_rule_skips_rail_protocol_words_to_find_the_name():
+    assert scrub_description("ZELLE PAYMENT FROM John Smith") == "ZELLE PAYMENT FROM [NAME]"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "VENMO CASHOUT 1047963703820",  # CASHOUT is a keyword, and no name follows
+        "XX3178 MT DDA DEBIT APPLE CASH SENT 1INFINITELOOP CA VP2P1850 017405",
+    ],
+)
+def test_p2p_rule_does_not_invent_a_name(text):
+    assert "[NAME]" not in scrub_description(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "WAL-MART #5837         ROGERS        AR",
+        "CHICK-FIL-A #03901     ROGERS        AR",
+        "SQ *WILLIAMS FAMOUS FR Bentonville   AR",
+        "CLAUDE.AI SUBSCRIPTION SAN FRANCISCO CA",
+    ],
+)
+def test_merchant_descriptions_are_untouched_by_the_p2p_rule(text):
+    # Merchant name and city are the classifier's main signal; only P2P rails,
+    # where the "merchant" is a person, lose them.
+    assert scrub_description(text) == text
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -339,6 +482,8 @@ def test_report_summary_is_sorted_and_compact():
         "Card ending in 4111 1111 1111 1111",
         "1234 N MAIN ST SPRINGFIELD, IL 62704 Emp #: 123456789",
         "Call 555-123-4567, ssn 123-45-6789, ref 1234567890123456",
+        "VENMO  Zach John New York NY CNP TX 327676",
+        "Account Number=21229022",
     ],
 )
 def test_scrubbing_is_idempotent(text):
