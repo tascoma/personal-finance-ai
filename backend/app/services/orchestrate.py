@@ -49,7 +49,7 @@ from app.services.file_readers import (
     extract_pdf_text,
     extract_xlsx_rows,
 )
-from app.services.scrub import scrub_description, scrub_text
+from app.services.scrub import redact_columns, scrub_description, scrub_text
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +75,21 @@ def _build_digest(document: Document, keep_terms: Sequence[str] = ()) -> Documen
             peek = text[:PDF_PEEK_CHARS]
         elif extension == ".csv":
             rows = extract_csv_rows(path)
-            peek = "\n".join(", ".join(f"{k}={v}" for k, v in r.items()) for r in rows[:TABULAR_PEEK_ROWS])
+            headers = list(rows[0].keys())
+            # Identifier columns are masked by header name before the peek is even
+            # rendered. The pattern rules that run later need 9+ digits to fire, so a
+            # 7- or 8-digit account number would otherwise reach the prompt in full.
+            cells, _ = redact_columns(
+                headers, [[r.get(h) for h in headers] for r in rows[:TABULAR_PEEK_ROWS]]
+            )
+            peek = "\n".join(", ".join(f"{h}={v}" for h, v in zip(headers, row)) for row in cells)
         elif extension == ".xlsx":
             rows_x = extract_xlsx_rows(path)
-            peek = "\n".join(" | ".join(str(c) if c is not None else "" for c in r) for r in rows_x[:TABULAR_PEEK_ROWS])
+            headers_x = [str(c) if c is not None else "" for c in rows_x[0]]
+            cells_x, _ = redact_columns(headers_x, rows_x[1:TABULAR_PEEK_ROWS])
+            peek = "\n".join(
+                [" | ".join(headers_x)] + [" | ".join(row) for row in cells_x]
+            )
         else:
             peek = f"(unsupported extension: {extension})"
             read_failed = True
@@ -115,9 +126,12 @@ def _build_digest(document: Document, keep_terms: Sequence[str] = ()) -> Documen
         )
 
     file_name = document.file_name
-    if settings.scrub_before_llm and not read_failed:
+    if settings.scrub_before_llm:
         # Scrub after the peek is already sliced so the regex work stays bounded
         # by PDF_PEEK_CHARS rather than running over the whole document.
+        # The read-failure path is scrubbed too: a ParseError message quotes the
+        # file name, and an upload called "Tony Scoma Statement 1234567890.pdf"
+        # would otherwise reach the prompt twice over.
         peek, report = scrub_text(peek, keep_terms=keep_terms)
         # A filename like "Tony Scoma Statement.pdf" leaks through the digest too,
         # while "Credit Card - 6120_04-01-2026.csv" keeps its useful last-4.

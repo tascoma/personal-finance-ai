@@ -25,11 +25,11 @@ def extract_pdf_text(path: Path) -> str:
         with pdfplumber.open(path) as pdf:
             pages = [page.extract_text() or "" for page in pdf.pages]
     except Exception as exc:
-        raise ParseError(f"Could not open PDF {path}: {exc}") from exc
+        raise ParseError(f"Could not open PDF {path.name}: {exc}") from exc
 
     text = "\n\n".join(pages).strip()
     if not text:
-        raise ParseError(f"PDF {path} contains no extractable text")
+        raise ParseError(f"PDF {path.name} contains no extractable text")
     return text
 
 
@@ -38,12 +38,12 @@ def extract_xlsx_rows(path: Path) -> list[list[Any]]:
     try:
         wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
     except Exception as exc:
-        raise ParseError(f"Could not open XLSX {path}: {exc}") from exc
+        raise ParseError(f"Could not open XLSX {path.name}: {exc}") from exc
 
     try:
         sheet = wb.active
         if sheet is None:
-            raise ParseError(f"XLSX {path} has no active sheet")
+            raise ParseError(f"XLSX {path.name} has no active sheet")
         rows: list[list[Any]] = []
         for raw in sheet.iter_rows(values_only=True):
             if any(cell is not None and str(cell).strip() != "" for cell in raw):
@@ -52,31 +52,39 @@ def extract_xlsx_rows(path: Path) -> list[list[Any]]:
         wb.close()
 
     if not rows:
-        raise ParseError(f"XLSX {path} is empty")
+        raise ParseError(f"XLSX {path.name} is empty")
     return rows
 
 
 def extract_csv_rows(path: Path) -> list[dict[str, str]]:
-    """Return rows from a CSV file as a list of dicts keyed by header."""
-    try:
-        with path.open("r", newline="", encoding="utf-8-sig") as fh:
-            reader = _csv.DictReader(fh)
-            if not reader.fieldnames:
-                raise ParseError(f"CSV {path} has no header row")
-            # DictReader puts extra trailing columns under the None key as a list;
-            # drop those — we only want named columns with scalar string values.
-            rows = [
-                {k: (v or "").strip() for k, v in row.items()
-                 if k is not None and isinstance(v, str)}
-                for row in reader
-            ]
-    except UnicodeDecodeError as exc:
-        raise ParseError(f"CSV {path} is not valid UTF-8: {exc}") from exc
-    except _csv.Error as exc:
-        raise ParseError(f"CSV {path} is malformed: {exc}") from exc
+    """Return rows from a CSV file as a list of dicts keyed by header.
+
+    Banks still ship Windows-encoded exports, so a UTF-8 failure retries as cp1252
+    rather than rejecting the file. cp1252 maps every byte, so the retry cannot
+    itself raise — a genuinely binary file falls out at the mapper instead.
+    """
+    for encoding in ("utf-8-sig", "cp1252"):
+        try:
+            with path.open("r", newline="", encoding=encoding) as fh:
+                reader = _csv.DictReader(fh)
+                if not reader.fieldnames:
+                    raise ParseError(f"CSV {path.name} has no header row")
+                # DictReader puts extra trailing columns under the None key as a list;
+                # drop those — we only want named columns with scalar string values.
+                rows = [
+                    {k: (v or "").strip() for k, v in row.items()
+                     if k is not None and isinstance(v, str)}
+                    for row in reader
+                ]
+            break
+        except UnicodeDecodeError as exc:
+            if encoding == "cp1252":
+                raise ParseError(f"CSV {path.name} could not be decoded: {exc}") from exc
+        except _csv.Error as exc:
+            raise ParseError(f"CSV {path.name} is malformed: {exc}") from exc
 
     if not rows:
-        raise ParseError(f"CSV {path} contains no data rows")
+        raise ParseError(f"CSV {path.name} contains no data rows")
     return rows
 
 
@@ -95,7 +103,7 @@ def read_opening_balances_xlsx(path: Path) -> list[tuple[int, Decimal]]:
         bal_idx = header.index("balance")
     except ValueError as exc:
         raise ParseError(
-            f"Opening-balances XLSX {path} must have columns "
+            f"Opening-balances XLSX {path.name} must have columns "
             "'account_code' and 'balance' in row 1"
         ) from exc
 
@@ -121,5 +129,5 @@ def read_opening_balances_xlsx(path: Path) -> list[tuple[int, Decimal]]:
         out.append((code, amount))
 
     if not out:
-        raise ParseError(f"Opening-balances XLSX {path} has no balance rows")
+        raise ParseError(f"Opening-balances XLSX {path.name} has no balance rows")
     return out
