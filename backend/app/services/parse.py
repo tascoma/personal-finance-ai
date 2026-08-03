@@ -37,7 +37,10 @@ from app.services.file_readers import (
     read_opening_balances_xlsx,
 )
 from app.services.scrub import scrub_text
-from app.services.statement_mapper import csv_to_transactions, xlsx_to_transactions
+from app.services.statement_mapper import (
+    csv_to_transactions_async,
+    xlsx_to_transactions_async,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -297,19 +300,21 @@ async def _extract_transactions(
         return prepared, settings.anthropic_model
 
     # All other types follow the statement shape regardless of upstream tag.
+    # Rows are always decoded deterministically; the LLM is only consulted when the
+    # header row itself is unrecognized, so `llm_model` is set only if that happened.
     if extension == ".csv":
-        logger.debug("Parsing CSV statement deterministically: %s", path.name)
+        logger.debug("Parsing CSV statement: %s", path.name)
         rows = extract_csv_rows(path)
-        txns = csv_to_transactions(rows)
+        txns, used_llm = await csv_to_transactions_async(rows)
         prepared = await _prepare_statement_txns(db, txns, document.source_account_code)
-        return prepared, None
+        return prepared, settings.anthropic_model if used_llm else None
 
     if extension == ".xlsx":
-        logger.debug("Parsing XLSX statement deterministically: %s", path.name)
+        logger.debug("Parsing XLSX statement: %s", path.name)
         rows_x = extract_xlsx_rows(path)
-        txns = xlsx_to_transactions(rows_x)
+        txns, used_llm = await xlsx_to_transactions_async(rows_x)
         prepared = await _prepare_statement_txns(db, txns, document.source_account_code)
-        return prepared, None
+        return prepared, settings.anthropic_model if used_llm else None
 
     if extension == ".pdf":
         logger.debug("Extracting PDF statement via LLM: %s", path.name)

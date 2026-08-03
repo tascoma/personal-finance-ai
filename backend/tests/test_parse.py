@@ -28,7 +28,12 @@ from app.models.account import Account
 from app.models.document import Document
 from app.models.journal import JournalEntry, JournalLine
 from app.models.raw_transaction import RawTransaction
-from app.services.file_readers import ParseError
+from app.services.file_readers import (
+    ParseError,
+    extract_csv_rows,
+    extract_pdf_text,
+    extract_xlsx_rows,
+)
 from app.services import document as document_service
 from app.services import parse as parse_service
 from app.services import period as period_service
@@ -264,6 +269,109 @@ async def test_csv_statement_parses_rows(session_factory, csv_document):
     # values on this column, so the service must write a naive UTC datetime.
     assert doc.parsed_at is not None
     assert doc.parsed_at.tzinfo is None
+
+
+@pytest_asyncio.fixture
+async def new_format_csv_document(session_factory, open_period, upload_root):
+    """The bank's current export: Debit/Credit split, an account-number column,
+    a Status column, and a pending row that must not be posted."""
+    period_dir = upload_root / str(open_period.period_id)
+    period_dir.mkdir(parents=True, exist_ok=True)
+    file_path = period_dir / "AccountHistory.csv"
+    file_path.write_text(
+        "Account Number,Post Date,Check,Description,Debit,Credit,Status,Balance\n"
+        '"2122902212",7/30/2026,,"WAL-MART ASSOCS. PAYROLL XXXXXX3311",,2541.90,Posted,\n'
+        '"2122902212",7/28/2026,,"XX3178 MT DDA DEBIT VENMO  Zach John New York NY",160.00,,Posted,\n'
+        '"2122902212",7/27/2026,,"PENDING COFFEE",4.50,,Pending,\n'
+    )
+    async with session_factory() as session:
+        doc = Document(
+            period_id=open_period.period_id,
+            document_type="bank_statement",
+            file_name="AccountHistory.csv",
+            file_path=str(file_path),
+            source_account_code=100101,
+            parse_status="pending",
+        )
+        session.add(doc)
+        await session.commit()
+        await session.refresh(doc)
+    return doc
+
+
+@pytest.mark.asyncio
+async def test_new_bank_format_parses_split_debit_credit(
+    session_factory, new_format_csv_document
+):
+    async with session_factory() as session:
+        count = await parse_service.parse_document(
+            session, new_format_csv_document.document_id
+        )
+    assert count == 2  # the Pending row is not posted
+
+    async with session_factory() as session:
+        rows = (await session.scalars(select(RawTransaction))).all()
+        doc = await session.get(Document, new_format_csv_document.document_id)
+
+    by_desc = {r.description: r for r in rows}
+    assert by_desc["WAL-MART ASSOCS. PAYROLL XXXXXX3311"].amount == Decimal("2541.90")
+    assert by_desc["XX3178 MT DDA DEBIT VENMO  Zach John New York NY"].amount == Decimal("-160.00")
+    assert not any("PENDING" in d for d in by_desc)
+    # Resolved deterministically — the schema-mapper agent is not consulted.
+    assert doc.llm_model is None
+
+
+@pytest.mark.asyncio
+async def test_unknown_layout_falls_back_to_the_schema_mapper(
+    session_factory, open_period, upload_root, monkeypatch
+):
+    from app.agents.statement import ResolvedColumns
+    from app.services import statement_mapper
+
+    async def fake_schema_mapper(prompt: str) -> ResolvedColumns:
+        return ResolvedColumns(
+            date_column="Fecha",
+            description_columns=["Concepto"],
+            debit_column="Cargo",
+            credit_column="Abono",
+        )
+
+    monkeypatch.setattr(statement_mapper, "run_schema_mapper", fake_schema_mapper)
+
+    period_dir = upload_root / str(open_period.period_id)
+    period_dir.mkdir(parents=True, exist_ok=True)
+    file_path = period_dir / "foreign.csv"
+    file_path.write_text(
+        "Fecha,Concepto,Cargo,Abono\n"
+        "2026-03-01,SUPERMERCADO,54.20,\n"
+        "2026-03-02,NOMINA,,1200.00\n"
+    )
+    async with session_factory() as session:
+        doc = Document(
+            period_id=open_period.period_id,
+            document_type="bank_statement",
+            file_name="foreign.csv",
+            file_path=str(file_path),
+            source_account_code=100101,
+            parse_status="pending",
+        )
+        session.add(doc)
+        await session.commit()
+        await session.refresh(doc)
+
+    async with session_factory() as session:
+        count = await parse_service.parse_document(session, doc.document_id)
+    assert count == 2
+
+    async with session_factory() as session:
+        rows = (await session.scalars(select(RawTransaction))).all()
+        parsed = await session.get(Document, doc.document_id)
+
+    by_desc = {r.description: r.amount for r in rows}
+    assert by_desc["SUPERMERCADO"] == Decimal("-54.20")
+    assert by_desc["NOMINA"] == Decimal("1200.00")
+    # The agent resolved the layout, so the document records which model did it.
+    assert parsed.llm_model == settings.anthropic_model
 
 
 @pytest.mark.asyncio
@@ -949,3 +1057,47 @@ async def test_opening_balances_skips_zero_rows(
         line_count = await parse_service.parse_document(session, doc.document_id)
     # 2 non-zero + 1 offset
     assert line_count == 3
+
+
+# ── file readers: encoding + error-message hygiene ───────────────────────────
+
+
+def test_cp1252_csv_is_read_rather_than_rejected(tmp_path):
+    # Banks still ship Windows-encoded exports; the 0x92 curly apostrophe in
+    # "MCDONALD'S" is not valid UTF-8 and used to fail the whole document.
+    path = tmp_path / "windows.csv"
+    path.write_bytes(
+        b"Date,Description,Amount\n1/2/26,MCDONALD\x92S CAF\xc9,-5.00\n"
+    )
+    rows = extract_csv_rows(path)
+    assert rows[0]["Description"] == "MCDONALD’S CAFÉ"
+
+
+def test_utf8_csv_still_wins_over_the_cp1252_fallback(tmp_path):
+    path = tmp_path / "utf8.csv"
+    path.write_text("Date,Description,Amount\n1/2/26,CAFÉ MØLLER,-5.00\n", encoding="utf-8")
+    assert extract_csv_rows(path)[0]["Description"] == "CAFÉ MØLLER"
+
+
+@pytest.mark.parametrize(
+    "name,contents",
+    [
+        ("Tony Scoma Statement 1234567890.csv", ""),
+        ("Tony Scoma Statement 1234567890.pdf", "not a pdf"),
+        ("Tony Scoma Statement 1234567890.xlsx", "not a workbook"),
+    ],
+)
+def test_read_errors_never_quote_the_upload_path(tmp_path, name, contents):
+    # The message reaches the orchestrator prompt via the digest peek, and the
+    # upload path carries the period UUID as well as the file name.
+    path = tmp_path / name
+    path.write_text(contents)
+    reader = {
+        ".csv": extract_csv_rows,
+        ".pdf": extract_pdf_text,
+        ".xlsx": extract_xlsx_rows,
+    }[path.suffix]
+
+    with pytest.raises(ParseError) as exc:
+        reader(path)
+    assert str(tmp_path) not in str(exc.value)
