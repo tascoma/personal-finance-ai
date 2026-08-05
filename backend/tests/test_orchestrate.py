@@ -502,11 +502,42 @@ def test_digest_is_not_scrubbed_when_the_flag_is_off(tmp_path, monkeypatch):
     assert "88293847192830429" in digest.content_peek
 
 
-def test_unreadable_file_still_reports_its_error_unscrubbed(tmp_path):
-    # A "(could not read file: ...)" peek is our own diagnostic, not statement
-    # content — scrubbing it would only obscure the failure.
-    digest = _digest_for(tmp_path, "empty.csv", "")
+NEW_FORMAT_CSV = (
+    "Account Number,Post Date,Check,Description,Debit,Credit,Status,Balance\n"
+    '"{acct}",7/30/2026,1042,"WAL-MART ASSOCS. PAYROLL",,2541.90,Posted,\n'
+)
+
+
+@pytest.mark.parametrize("acct", ["2122902212", "21229022", "2122902"])
+def test_identifier_columns_are_masked_in_the_digest_at_any_length(tmp_path, acct):
+    # The generic digit-run rule needs 9+ digits, so before `redact_columns` the
+    # 7- and 8-digit cases reached the orchestrator prompt in full.
+    digest = _digest_for(tmp_path, "bank.csv", NEW_FORMAT_CSV.format(acct=acct))
+    assert acct not in digest.content_peek
+    assert f"••{acct[-4:]}" in digest.content_peek
+    # The last 4 is what the orchestrator matches a statement to its account on.
+
+
+def test_check_number_column_is_masked_in_the_digest(tmp_path):
+    digest = _digest_for(tmp_path, "bank.csv", NEW_FORMAT_CSV.format(acct="2122902212"))
+    assert "Check=••1042" in digest.content_peek
+
+
+def test_digest_keeps_the_columns_the_orchestrator_routes_on(tmp_path):
+    digest = _digest_for(tmp_path, "bank.csv", NEW_FORMAT_CSV.format(acct="2122902212"))
+    assert "WAL-MART ASSOCS. PAYROLL" in digest.content_peek
+    assert "2541.90" in digest.content_peek
+    assert "Post Date=7/30/2026" in digest.content_peek
+
+
+def test_unreadable_file_error_is_scrubbed_but_stays_diagnostic(tmp_path):
+    # The read-failure peek quotes the file name, so it carries exactly the PII the
+    # rest of the digest is scrubbed for. It is redacted like anything else — while
+    # staying readable enough to diagnose the failure.
+    digest = _digest_for(tmp_path, "Tony Scoma Statement 1234567890.csv", "")
     assert "could not read file" in digest.content_peek
+    assert "1234567890" not in digest.content_peek
+    assert "1234567890" not in digest.file_name
 
 
 # ── HTTP route tests ─────────────────────────────────────────────────────────
