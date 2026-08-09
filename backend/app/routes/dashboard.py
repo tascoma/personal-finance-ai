@@ -11,7 +11,10 @@ from app.schemas.api_responses import (
     DashboardResponse,
     ExpenseCategoryPoint,
     ExpenseCategorySeriesPoint,
+    MoneyFlowBucketPoint,
+    MoneyFlowResponse,
     NetWorthPoint,
+    PaycheckFlowResponse,
     PeriodBarPoint,
     RecentEntryPoint,
     RetirementContributionPoint,
@@ -23,6 +26,10 @@ from app.services.period import get_current_open_period
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["dashboard"], dependencies=[Depends(get_current_user)])
+
+
+def _flow_point(bucket: dashboard_service.MoneyFlowBucket) -> MoneyFlowBucketPoint:
+    return MoneyFlowBucketPoint(category=bucket.label, amount=str(bucket.amount))
 
 
 @router.get("/dashboard", response_model=DashboardResponse)
@@ -79,6 +86,20 @@ async def get_dashboard(
             ExpenseCategoryPoint(category=c.label, amount=str(c.amount))
             for c in data.top_expense_categories
         ],
+        money_flow=MoneyFlowResponse(
+            income=[_flow_point(b) for b in data.money_flow.income],
+            expenses=[_flow_point(b) for b in data.money_flow.expenses],
+            fund_flows=[_flow_point(b) for b in data.money_flow.fund_flows],
+        ),
+        paycheck_flow=PaycheckFlowResponse(
+            earnings=[_flow_point(b) for b in data.paycheck_flow.earnings],
+            deductions=[_flow_point(b) for b in data.paycheck_flow.deductions],
+            employer=[_flow_point(b) for b in data.paycheck_flow.employer],
+            take_home=str(data.paycheck_flow.take_home),
+            other_income=[_flow_point(b) for b in data.paycheck_flow.other_income],
+            drawdowns=[_flow_point(b) for b in data.paycheck_flow.drawdowns],
+            uses=[_flow_point(b) for b in data.paycheck_flow.uses],
+        ),
         expense_category_series=[
             ExpenseCategorySeriesPoint(
                 period_label=p.period_label,

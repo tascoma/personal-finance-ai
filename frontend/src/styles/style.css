@@ -1068,6 +1068,12 @@ select.inp { cursor: pointer; appearance: none; padding-right: 32px;
 .legend-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
 .legend-pct { color: var(--text-3); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; }
 
+/* ── Sankey ────────────────────────────────────────────────── */
+.sankey-flow path { transition: fill-opacity .15s var(--ease); }
+.sankey-flow:hover path { fill-opacity: .55; }
+.sankey-node rect { transition: fill-opacity .15s var(--ease); }
+.sankey-node:hover rect { fill-opacity: .75; }
+
 /* ── Animated counter / stat ───────────────────────────────── */
 @keyframes count-pop {
   from { opacity: 0; transform: translateY(4px); }

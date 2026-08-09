@@ -5,8 +5,10 @@ import EmptyState from '../../components/EmptyState'
 import SvgIcon from '../../components/SvgIcon'
 import Sparkline from '../../components/Sparkline'
 import RingChart from '../../components/RingChart'
+import SankeyChart from '../../components/SankeyChart'
 import { fmtMoney } from '../../utils/format'
 import { applyChartDefaults, getChartPalette, moneyTick, moneyTip } from './chartTheme'
+import { buildIncomeStatementSankey, SANKEY_COLORS } from './sankeyData'
 import { TARGET_YEAR, type DashboardTabProps } from './constants'
 
 const CONTRIB_LIMIT_401K = 24_500
@@ -265,6 +267,23 @@ export default function OverviewTab({ data, scopeLabel }: DashboardTabProps) {
           )
         })()}
       </div>
+
+      {/* Money flow */}
+      {(() => {
+        const sankey = buildIncomeStatementSankey(data.money_flow, SANKEY_COLORS)
+        return (
+          <div className="card mb-4">
+            <div className="card-hd">
+              <div><div className="card-title">Money Flow</div><div className="card-sub">{scopeLabel}</div></div>
+            </div>
+            <div className="card-bd">
+              {sankey.nodes.length ? (
+                <SankeyChart model={sankey} />
+              ) : <EmptyState message="No income or expenses recorded yet." />}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Top categories + Recent activity */}
       <div className="grid grid-12">
