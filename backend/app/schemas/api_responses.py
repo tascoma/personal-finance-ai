@@ -45,6 +45,43 @@ class ExpenseCategoryPoint(BaseModel):
     amount: str
 
 
+class MoneyFlowBucketPoint(BaseModel):
+    category: str
+    amount: str
+
+
+class MoneyFlowResponse(BaseModel):
+    """Sources and uses; sum(income) == sum(expenses) + sum(fund_flows).
+
+    Amounts are signed: positive fund_flows are uses (asset bought, debt repaid),
+    negative ones are sources (cash drawn down).
+    """
+
+    income: list[MoneyFlowBucketPoint]
+    expenses: list[MoneyFlowBucketPoint]
+    fund_flows: list[MoneyFlowBucketPoint]
+
+
+class PaycheckFlowResponse(BaseModel):
+    """Paycheck-shaped money flow: gross → withholdings → take-home → spending.
+
+    Amounts are strings (decimals). Invariants:
+      sum(earnings) + sum(employer) == take_home + sum(deductions)
+      take_home + sum(other_income) + sum(drawdowns) == sum(uses)
+    Employer contributions appear once as income (employer) and once as a
+    withholding (their paired asset debit stays in deductions). Deductions use
+    per-account labels (e.g. "401(k)", "HSA") with sub_category fallback.
+    """
+
+    earnings: list[MoneyFlowBucketPoint]
+    deductions: list[MoneyFlowBucketPoint]
+    employer: list[MoneyFlowBucketPoint]
+    take_home: str
+    other_income: list[MoneyFlowBucketPoint]
+    drawdowns: list[MoneyFlowBucketPoint]
+    uses: list[MoneyFlowBucketPoint]
+
+
 class ExpenseCategorySeriesPoint(BaseModel):
     period_label: str
     category: str
@@ -99,6 +136,8 @@ class DashboardResponse(BaseModel):
     period_bars: list[PeriodBarPoint]
     net_worth_series: list[NetWorthPoint]
     top_expense_categories: list[ExpenseCategoryPoint]
+    money_flow: MoneyFlowResponse
+    paycheck_flow: PaycheckFlowResponse
     expense_category_series: list[ExpenseCategorySeriesPoint]
     asset_composition: list[AssetCompositionPoint]
     asset_series: list[AssetSeriesPoint]

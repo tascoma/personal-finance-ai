@@ -162,6 +162,41 @@ export interface ExpenseCategoryPoint {
   amount: string
 }
 
+export interface MoneyFlowBucketPoint {
+  category: string
+  amount: string
+}
+
+/**
+ * Sources and uses; sum(income) === sum(expenses) + sum(fund_flows).
+ * Amounts are signed: a positive fund flow is a use (asset bought, debt repaid),
+ * a negative one is a source (cash drawn down).
+ */
+export interface MoneyFlowResponse {
+  income: MoneyFlowBucketPoint[]
+  expenses: MoneyFlowBucketPoint[]
+  fund_flows: MoneyFlowBucketPoint[]
+}
+
+/**
+ * Paycheck-shaped money flow: gross → withholdings → take-home → spending.
+ * Invariants:
+ *   sum(earnings) + sum(employer) === take_home + sum(deductions)
+ *   take_home + sum(other_income) + sum(drawdowns) === sum(uses)
+ * Employer contributions appear once as income (employer) and once as a
+ * withholding (their paired asset debit stays in deductions). Deductions use
+ * per-account labels (e.g. "401(k)", "HSA") with sub_category fallback.
+ */
+export interface PaycheckFlowResponse {
+  earnings: MoneyFlowBucketPoint[]
+  deductions: MoneyFlowBucketPoint[]
+  employer: MoneyFlowBucketPoint[]
+  take_home: string
+  other_income: MoneyFlowBucketPoint[]
+  drawdowns: MoneyFlowBucketPoint[]
+  uses: MoneyFlowBucketPoint[]
+}
+
 export interface ExpenseCategorySeriesPoint {
   period_label: string
   category: string
@@ -216,6 +251,8 @@ export interface DashboardResponse {
   period_bars: PeriodBarPoint[]
   net_worth_series: NetWorthPoint[]
   top_expense_categories: ExpenseCategoryPoint[]
+  money_flow: MoneyFlowResponse
+  paycheck_flow: PaycheckFlowResponse
   expense_category_series: ExpenseCategorySeriesPoint[]
   asset_composition: AssetCompositionPoint[]
   asset_series: AssetSeriesPoint[]
