@@ -2,9 +2,8 @@
 
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -193,7 +192,7 @@ class DashboardData:
     tax_advantaged: Decimal
     tax_advantaged_prev: Decimal
     total_assets_prev: Decimal
-    ytd_year: Optional[int]
+    ytd_year: int | None
     ytd_retirement_contributions: list[RetirementContributionPoint]
 
 
@@ -384,10 +383,10 @@ def _paycheck_flow(
 
 async def compute_dashboard(
     db: AsyncSession,
-    year: Optional[int] = None,
-    period_id: Optional[uuid.UUID] = None,
-    from_period_id: Optional[uuid.UUID] = None,
-    to_period_id: Optional[uuid.UUID] = None,
+    year: int | None = None,
+    period_id: uuid.UUID | None = None,
+    from_period_id: uuid.UUID | None = None,
+    to_period_id: uuid.UUID | None = None,
 ) -> DashboardData:
     accounts_result = await db.scalars(select(Account))
     accounts: dict[int, Account] = {a.account_code: a for a in accounts_result.all()}
@@ -416,7 +415,6 @@ async def compute_dashboard(
     # was never formally closed). Without this, KPI totals like total_assets
     # show just the latest period's net change instead of the running balance.
     all_closed_periods = [p for p in all_periods if p.status == "closed"]
-    all_closed_ids = {p.period_id for p in all_closed_periods}
 
     closed_filter_periods = [p for p in periods if p.status == "closed"]
     filter_closed_ids = {p.period_id for p in closed_filter_periods}
@@ -539,7 +537,7 @@ async def compute_dashboard(
     # (web from/to range or no filter) they default to the most recent closed
     # year, matching the existing YTD-growth pattern on the frontend.
     if year is not None:
-        ytd_year: Optional[int] = year
+        ytd_year: int | None = year
     elif all_closed_periods:
         ytd_year = max(p.period_start.year for p in all_closed_periods)
     else:
@@ -707,11 +705,11 @@ async def compute_dashboard(
     period_labels: dict = {p.period_id: p.period_start.strftime("%b %Y") for p in all_closed_periods}
 
     lines_by_entry: dict = defaultdict(list)
-    for line, period_id, entry_id, _is_closing, _source_type in all_rows:
+    for line, _period_id, entry_id, _is_closing, _source_type in all_rows:
         lines_by_entry[entry_id].append(line)
 
     recent_entries: list[RecentEntry] = []
-    for entry, period_start in recent_result.all():
+    for entry, _period_start in recent_result.all():
         entry_lines = lines_by_entry.get(entry.entry_id, [])
         total_debit = float(sum(ln.debit_amount for ln in entry_lines))
         recent_entries.append(RecentEntry(

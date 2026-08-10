@@ -1,16 +1,19 @@
-import uuid
 from datetime import date
 from decimal import Decimal
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.databases import Base, init_db, _seed_accounts_if_empty
+from app.databases import Base, init_db
 from app.models import (
-    Account, JournalEntry, JournalLine, Period, StatedBalance,
+    Account,
+    JournalEntry,
+    JournalLine,
+    Period,
+    StatedBalance,
 )
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
@@ -132,7 +135,7 @@ async def test_journal_entry_balanced(session: AsyncSession):
         select(JournalLine).where(JournalLine.entry_id == entry.entry_id)
     )).all()
     assert len(lines) == 2
-    net = sum(l.debit_amount - l.credit_amount for l in lines)
+    net = sum(ln.debit_amount - ln.credit_amount for ln in lines)
     assert net == Decimal("0.00")
 
 

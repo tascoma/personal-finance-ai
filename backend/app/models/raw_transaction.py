@@ -1,7 +1,6 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
 
 from sqlalchemy import (
     Boolean,
@@ -44,17 +43,17 @@ class RawTransaction(Base):
     txn_date: Mapped[date] = mapped_column(Date, nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
-    suggested_account_code: Mapped[Optional[int]] = mapped_column(
+    suggested_account_code: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("accounts.account_code"), nullable=True
     )
-    classifier_confidence: Mapped[Optional[Decimal]] = mapped_column(
+    classifier_confidence: Mapped[Decimal | None] = mapped_column(
         Numeric(4, 3), nullable=True
     )
     is_flagged: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_duplicate: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    dedup_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    dedup_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, default="staged", nullable=False)
-    journal_entry_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    journal_entry_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("journal_entries.entry_id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(

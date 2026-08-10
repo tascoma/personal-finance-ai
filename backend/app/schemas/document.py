@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel
 
@@ -10,7 +9,7 @@ class DocumentCreate(BaseModel):
     document_type: str
     file_name: str
     file_path: str
-    source_account_code: Optional[int] = None
+    source_account_code: int | None = None
 
 
 class DocumentRead(BaseModel):
@@ -19,10 +18,10 @@ class DocumentRead(BaseModel):
     document_type: str
     file_name: str
     file_path: str
-    source_account_code: Optional[int]
+    source_account_code: int | None
     parse_status: str
-    parsed_at: Optional[datetime]
-    llm_model: Optional[str]
+    parsed_at: datetime | None
+    llm_model: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

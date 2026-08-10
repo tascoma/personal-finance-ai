@@ -1,12 +1,12 @@
 import logging
 import uuid
+from collections.abc import Sequence
 from decimal import Decimal
-from typing import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.classifier import ClassifierOutput, TxnInput, run_classifier
+from app.agents.classifier import TxnInput, run_classifier
 from app.core.config import settings
 from app.models.account import Account
 from app.models.document import Document

@@ -12,12 +12,12 @@ from app.dependencies import get_current_user, get_db_session
 from app.models.reconciliation import Reconciliation
 from app.schemas.api_responses import (
     AccountAnalysisSchema,
-    ReconciliationAnalysisSchema,
     ReconcilePageResponse,
+    ReconciliationAnalysisSchema,
     UnrealizedGlRequest,
 )
 from app.schemas.period import PeriodRead
-from app.schemas.reconciliation import ReconciliationDetail, TempAccountPreview, EquityRollupPreview
+from app.schemas.reconciliation import ReconciliationDetail
 from app.services import period as period_service
 from app.services import reconciliation as recon_service
 from app.services.scrub import scrub_description
@@ -130,9 +130,8 @@ async def analyze_reconciliation(
     if period is None:
         raise HTTPException(status_code=404, detail="Period not found")
 
+
     from app.agents.reconciliation import AccountGap
-    from app.models.journal import JournalEntry
-    from sqlalchemy import select as sa_select
 
     recon_rows = await db.scalars(
         select(Reconciliation).where(Reconciliation.period_id == period_id)
@@ -142,8 +141,10 @@ async def analyze_reconciliation(
         (await recon_service.compute_account_balances(db, period)).get(r.account_code, {}).get("is_investment", False)
     )]
 
-    from app.models.journal import JournalEntry as JE, JournalLine as JL
     from sqlalchemy import select as sel
+
+    from app.models.journal import JournalEntry as JE
+    from app.models.journal import JournalLine as JL
 
     gaps: list[AccountGap] = []
     balances = await recon_service.compute_account_balances(db, period)

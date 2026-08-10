@@ -5,8 +5,8 @@ route tests so no real API calls are made.
 """
 
 import uuid
-from datetime import date
 from decimal import Decimal
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
@@ -14,18 +14,16 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from unittest.mock import AsyncMock
-
 from app.agents.reconciliation import AccountAnalysis, ReconciliationAnalysis
 from app.databases import Base
 from app.dependencies import get_current_user, get_db_session
-from app.models.user import User
 from app.main import app
 from app.models.account import Account
 from app.models.journal import JournalEntry, JournalLine
 from app.models.period import Period
 from app.models.reconciliation import Reconciliation
 from app.models.stated_balance import StatedBalance
+from app.models.user import User
 from app.services import journal as journal_service
 from app.services import period as period_service
 from app.services import reconciliation as recon_service

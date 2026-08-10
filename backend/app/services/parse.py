@@ -10,11 +10,11 @@ import hashlib
 import logging
 import re
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Sequence
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -178,7 +178,7 @@ async def parse_document(
             await db.commit()
             raise ParseError(f"Unexpected parse failure: {exc}") from exc
         document.parse_status = "complete"
-        document.parsed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        document.parsed_at = datetime.now(UTC).replace(tzinfo=None)
         document.llm_model = None
         await db.commit()
         logger.info(
@@ -213,7 +213,7 @@ async def parse_document(
         raise ParseError(f"Unexpected parse failure: {exc}") from exc
 
     document.parse_status = "complete"
-    document.parsed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    document.parsed_at = datetime.now(UTC).replace(tzinfo=None)
     document.llm_model = llm_model
     await db.commit()
     logger.info(

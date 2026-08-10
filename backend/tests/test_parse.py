@@ -22,21 +22,21 @@ from app.agents.statement import ExtractedStatement, ExtractedTxn
 from app.core.config import settings
 from app.databases import Base
 from app.dependencies import get_current_user, get_db_session
-from app.models.user import User
 from app.main import app
 from app.models.account import Account
 from app.models.document import Document
 from app.models.journal import JournalEntry, JournalLine
 from app.models.raw_transaction import RawTransaction
+from app.models.user import User
+from app.services import document as document_service
+from app.services import parse as parse_service
+from app.services import period as period_service
 from app.services.file_readers import (
     ParseError,
     extract_csv_rows,
     extract_pdf_text,
     extract_xlsx_rows,
 )
-from app.services import document as document_service
-from app.services import parse as parse_service
-from app.services import period as period_service
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 

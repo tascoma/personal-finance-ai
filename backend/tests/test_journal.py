@@ -17,12 +17,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.databases import Base
 from app.dependencies import get_current_user, get_db_session
-from app.models.user import User
 from app.main import app
 from app.models.account import Account
 from app.models.document import Document
 from app.models.journal import JournalEntry, JournalLine
 from app.models.raw_transaction import RawTransaction
+from app.models.user import User
 from app.services import journal as journal_service
 from app.services import period as period_service
 from app.services.journal import JournalError
@@ -443,8 +443,8 @@ async def test_create_manual_entry_balanced(session_factory, open_period):
         )).all()
 
     assert len(lines) == 2
-    total_debits = sum(l.debit_amount for l in lines)
-    total_credits = sum(l.credit_amount for l in lines)
+    total_debits = sum(ln.debit_amount for ln in lines)
+    total_credits = sum(ln.credit_amount for ln in lines)
     assert total_debits == total_credits == Decimal("100.00")
 
 

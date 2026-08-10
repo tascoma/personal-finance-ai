@@ -21,8 +21,8 @@ point of the extraction.
 """
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Sequence
 
 from app.core.config import settings
 

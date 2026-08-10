@@ -1,7 +1,6 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
 
 from sqlalchemy import (
     Boolean,
@@ -41,7 +40,7 @@ class JournalEntry(Base):
     entry_date: Mapped[date] = mapped_column(Date, nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False)
     source_type: Mapped[str] = mapped_column(String, nullable=False)
-    source_document_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    source_document_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("documents.document_id"), nullable=True
     )
     is_adjusting: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -78,4 +77,4 @@ class JournalLine(Base):
     credit_amount: Mapped[Decimal] = mapped_column(
         Numeric(15, 2), default=Decimal("0"), nullable=False
     )
-    memo: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    memo: Mapped[str | None] = mapped_column(String, nullable=True)

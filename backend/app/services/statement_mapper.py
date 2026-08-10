@@ -25,10 +25,11 @@ is the safety net for a layout nobody has extended for yet.
 
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Sequence
+from typing import Any
 
 from app.agents.statement import ExtractedTxn, ResolvedColumns, run_schema_mapper
 from app.core.config import settings

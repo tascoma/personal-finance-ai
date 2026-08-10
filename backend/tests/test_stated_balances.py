@@ -10,10 +10,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.databases import Base
 from app.dependencies import get_current_user, get_db_session
-from app.models.user import User
 from app.main import app
 from app.models.account import Account
 from app.models.stated_balance import StatedBalance
+from app.models.user import User
 from app.services import period as period_service
 from app.services import stated_balance as stated_balance_service
 

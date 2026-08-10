@@ -7,10 +7,6 @@ one request.
 
 from __future__ import annotations
 
-import uuid
-from decimal import Decimal
-from typing import Any, Optional
-
 from pydantic import BaseModel
 
 from app.schemas.account import AccountRead
@@ -23,7 +19,6 @@ from app.schemas.reconciliation import (
     ReconciliationDetail,
     TempAccountPreview,
 )
-
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
@@ -141,10 +136,10 @@ class DashboardResponse(BaseModel):
     expense_category_series: list[ExpenseCategorySeriesPoint]
     asset_composition: list[AssetCompositionPoint]
     asset_series: list[AssetSeriesPoint]
-    ytd_year: Optional[int]
+    ytd_year: int | None
     ytd_retirement_contributions: list[RetirementContributionPoint]
     recent_entries: list[RecentEntryPoint]
-    active_period: Optional[PeriodRead]
+    active_period: PeriodRead | None
 
 
 # ── Period detail ─────────────────────────────────────────────────────────────
@@ -163,8 +158,8 @@ class PeriodDetailResponse(BaseModel):
     stated_balances: dict[int, str]
     has_pending_documents: bool
     posted_doc_ids: list[str]
-    next_status: Optional[str]
-    prev_status: Optional[str]
+    next_status: str | None
+    prev_status: str | None
 
 
 # ── Ledger ────────────────────────────────────────────────────────────────────
@@ -261,8 +256,8 @@ class JournalPageResponse(BaseModel):
     has_unclassified: bool
     documents: list[DocumentRead]
     docs_missing_source: list[DocumentRead]
-    next_status: Optional[str]
-    prev_status: Optional[str]
+    next_status: str | None
+    prev_status: str | None
 
 
 # ── Reconciliation page ───────────────────────────────────────────────────────
@@ -287,7 +282,7 @@ class ReconcilePageResponse(BaseModel):
     has_gaps: bool
     has_investment_gaps: bool
     has_non_investment_gaps: bool
-    analysis: Optional[ReconciliationAnalysisSchema]
+    analysis: ReconciliationAnalysisSchema | None
     temp_preview: TempAccountPreview
     equity_preview: EquityRollupPreview
 
@@ -310,7 +305,7 @@ class JournalLineCreate(BaseModel):
     account_code: int
     debit: str
     credit: str
-    memo: Optional[str] = None
+    memo: str | None = None
 
 
 class ManualJournalEntryCreate(BaseModel):
@@ -343,7 +338,7 @@ class StatusUpdateRequest(BaseModel):
 
 
 class SourceAccountRequest(BaseModel):
-    source_account_code: Optional[int] = None
+    source_account_code: int | None = None
 
 
 class AccountCodeRequest(BaseModel):

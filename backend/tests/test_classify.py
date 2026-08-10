@@ -8,18 +8,17 @@ from unittest.mock import AsyncMock
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agents.classifier import ClassifierOutput, TxnInput, TxnSuggestion
 from app.core.config import settings
 from app.databases import Base
 from app.dependencies import get_current_user, get_db_session
-from app.models.user import User
 from app.main import app
 from app.models.account import Account
 from app.models.document import Document
 from app.models.raw_transaction import RawTransaction
+from app.models.user import User
 from app.services import classify as classify_service
 from app.services import period as period_service
 
@@ -244,7 +243,6 @@ async def client(session_factory, monkeypatch):
         AsyncMock(return_value=ClassifierOutput(suggestions=[])),
     )
     async def _mock_user() -> User:
-        import uuid
         return User(user_id=uuid.uuid4(), email="test@test.com", hashed_password="", is_active=True)
 
     app.dependency_overrides[get_db_session] = override_db

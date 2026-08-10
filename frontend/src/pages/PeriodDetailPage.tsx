@@ -56,7 +56,10 @@ export default function PeriodDetailPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [txnRows, setTxnRows] = useState([{ date: '', desc: '', amount: '', acct: '' }])
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['period', periodId] })
+  const invalidate = useCallback(
+    () => qc.invalidateQueries({ queryKey: ['period', periodId] }),
+    [qc, periodId],
+  )
 
   const { data, isLoading } = useQuery({
     queryKey: ['period', periodId],
@@ -123,7 +126,7 @@ export default function PeriodDetailPage() {
       }
     }
     uploadMut()
-  }, [periodId])
+  }, [periodId, invalidate])
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault()

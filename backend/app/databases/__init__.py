@@ -1,7 +1,7 @@
 import logging
 from collections.abc import AsyncGenerator
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -129,9 +129,16 @@ async def _seed_accounts_if_empty() -> None:
 
 async def init_db() -> None:
     from app.models import (  # noqa: F401 — import triggers Base registration
-        Account, Period, Document, RawTransaction,
-        JournalEntry, JournalLine, StatedBalance,
-        Reconciliation, ReviewQueue, User,
+        Account,
+        Document,
+        JournalEntry,
+        JournalLine,
+        Period,
+        RawTransaction,
+        Reconciliation,
+        ReviewQueue,
+        StatedBalance,
+        User,
     )
 
     async with engine.begin() as conn:
