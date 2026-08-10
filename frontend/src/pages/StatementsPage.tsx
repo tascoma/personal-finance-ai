@@ -6,6 +6,7 @@ import Layout from '../components/Layout'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
 import SvgIcon from '../components/SvgIcon'
+import { fmtMoney } from '../utils/format'
 import type { CashflowStatementResponse, IncomeStatementResponse } from '../types'
 
 type IncomeSectionKey = 'income' | 'expenses' | 'other_comprehensive_income'
@@ -63,10 +64,12 @@ function pivotCashflowBySubCategory(responses: (CashflowStatementResponse | unde
 type Tab = 'balance_sheet' | 'income_statement' | 'cashflows'
 
 function Money({ val }: { val: string }) {
+  // fmtMoney parenthesizes negatives — the accounting convention, and the only
+  // one that survives the Export PDF path below. Signalling a negative purely
+  // with `color-red` meant a -$12,400 liability printed as "$12,400.00" in
+  // grayscale, so Liabilities + Equity appeared not to tie.
   const n = parseFloat(val)
-  const fmt = (v: number) => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  if (n < 0) return <span className="color-red">${fmt(Math.abs(n))}</span>
-  return <span>${fmt(n)}</span>
+  return <span className={n < 0 ? 'color-red' : undefined}>{fmtMoney(n)}</span>
 }
 
 export default function StatementsPage() {

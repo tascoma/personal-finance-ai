@@ -3,11 +3,11 @@ import { Link } from 'react-router-dom'
 import { Chart } from 'chart.js'
 import EmptyState from '../../components/EmptyState'
 import SvgIcon from '../../components/SvgIcon'
-import Sparkline from '../../components/Sparkline'
+import HeroSparkline from '../../components/HeroSparkline'
 import RingChart from '../../components/RingChart'
 import SankeyChart from '../../components/SankeyChart'
 import { fmtMoney } from '../../utils/format'
-import { applyChartDefaults, getChartPalette, moneyTick, moneyTip } from './chartTheme'
+import { getChartPalette, moneyTick, moneyTip } from './chartTheme'
 import { buildIncomeStatementSankey, SANKEY_COLORS } from './sankeyData'
 import { TARGET_YEAR, type DashboardTabProps } from './constants'
 
@@ -30,7 +30,6 @@ export default function OverviewTab({ data, scopeLabel }: DashboardTabProps) {
   useEffect(() => {
     if (!ieRef.current || !data.period_bars.length) return
     const palette = getChartPalette()
-    applyChartDefaults(palette)
     const { green, red } = palette
     const chart = new Chart(ieRef.current, {
       type: 'bar',
@@ -104,7 +103,7 @@ export default function OverviewTab({ data, scopeLabel }: DashboardTabProps) {
             </div>
           </div>
           <div style={{ alignSelf: 'stretch', display: 'flex', flexDirection: 'column' }}>
-            <Sparkline data={nwSeries} labels={nwLabels} showAxes fillContainer color="white" fill="rgba(255,255,255,0.22)" strokeWidth={2.2} />
+            <HeroSparkline data={nwSeries} labels={nwLabels} />
           </div>
         </div>
       )}

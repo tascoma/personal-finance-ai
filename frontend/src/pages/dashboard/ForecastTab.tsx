@@ -2,12 +2,23 @@ import { useEffect, useMemo, useRef } from 'react'
 import { Chart } from 'chart.js'
 import EmptyState from '../../components/EmptyState'
 import SvgIcon from '../../components/SvgIcon'
-import Sparkline from '../../components/Sparkline'
+import HeroSparkline from '../../components/HeroSparkline'
 import { fmtMoney } from '../../utils/format'
 import { getChartPalette, moneyTick } from './chartTheme'
 import { TARGET_YEAR, type DashboardTabProps } from './constants'
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+function parseLabel(label: string): [number, number] | null {
+  const dash = label.match(/^(\d{4})-(\d{2})$/)
+  if (dash) return [parseInt(dash[1], 10), parseInt(dash[2], 10)]
+  const space = label.match(/^([A-Z][a-z]{2}) (\d{4})$/)
+  if (space) {
+    const idx = MONTH_NAMES.indexOf(space[1])
+    if (idx >= 0) return [parseInt(space[2], 10), idx + 1]
+  }
+  return null
+}
 
 export default function ForecastTab({ data, scopeLabel }: DashboardTabProps) {
   const forecastRef = useRef<HTMLCanvasElement>(null)
@@ -18,13 +29,6 @@ export default function ForecastTab({ data, scopeLabel }: DashboardTabProps) {
     const n = histVals.length
     const lastNw = histVals[n - 1]
     const lastLabel = data.net_worth_series[n - 1].period_label
-    const parseLabel = (label: string): [number, number] | null => {
-      const dash = label.match(/^(\d{4})-(\d{2})$/)
-      if (dash) return [parseInt(dash[1], 10), parseInt(dash[2], 10)]
-      const space = label.match(/^([A-Z][a-z]{2}) (\d{4})$/)
-      if (space) { const idx = MONTH_NAMES.indexOf(space[1]); if (idx >= 0) return [parseInt(space[2], 10), idx + 1] }
-      return null
-    }
     const parsed = parseLabel(lastLabel)
     if (!parsed) return null
     const [ly, lm] = parsed
@@ -33,7 +37,7 @@ export default function ForecastTab({ data, scopeLabel }: DashboardTabProps) {
     const avgMonthlyNet = bars.length ? bars.reduce((s, b) => s + parseFloat(b.net), 0) / bars.length : 0
     const trailingFuture = Array.from({ length: monthsRemaining }, (_, k) => lastNw + (k + 1) * avgMonthlyNet)
     const eoy = trailingFuture[trailingFuture.length - 1] ?? lastNw
-    return { avgMonthlyNet, currentNw: lastNw, trailingEoy: eoy, monthsRemaining }
+    return { avgMonthlyNet, currentNw: lastNw, trailingEoy: eoy, monthsRemaining, ly, lm }
   }, [data])
 
   useEffect(() => {
@@ -44,10 +48,11 @@ export default function ForecastTab({ data, scopeLabel }: DashboardTabProps) {
     const n = histVals.length
     const lastNw = histVals[n - 1]
     const avgMonthlyNet = forecast.avgMonthlyNet
-    const lastLabel = data.net_worth_series[n - 1].period_label
-    const space = lastLabel.match(/^([A-Z][a-z]{2}) (\d{4})$/)
-    const [ly, lm] = space ? [parseInt(space[2], 10), MONTH_NAMES.indexOf(space[1]) + 1] : [TARGET_YEAR, 12]
-    const monthsRemaining = Math.max(0, (TARGET_YEAR - ly) * 12 + (12 - lm))
+    // Reuse the memo's parse rather than re-deriving it: a second, weaker copy
+    // here handled only "Mon YYYY" and fell back to monthsRemaining = 0 for
+    // "YYYY-MM" labels, so the hero showed an EOY projection that the chart
+    // below drew zero future points for.
+    const { ly, lm, monthsRemaining } = forecast
     const histLabels = data.net_worth_series.map((p) => p.period_label)
     const futureLabels: string[] = []
     for (let k = 1; k <= monthsRemaining; k++) { const total = lm + k; const year = ly + Math.floor((total - 1) / 12); const month = ((total - 1) % 12) + 1; futureLabels.push(`${MONTH_NAMES[month - 1]} ${year}`) }
@@ -108,7 +113,7 @@ export default function ForecastTab({ data, scopeLabel }: DashboardTabProps) {
           </div>
         </div>
         <div style={{ alignSelf: 'stretch', display: 'flex', flexDirection: 'column' }}>
-          <Sparkline data={nwSeries} labels={nwLabels} showAxes fillContainer color="white" fill="rgba(255,255,255,0.22)" strokeWidth={2.2} />
+          <HeroSparkline data={nwSeries} labels={nwLabels} />
         </div>
       </div>
       <div className="card">

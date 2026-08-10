@@ -3,7 +3,7 @@ import { useQueries, useQuery } from '@tanstack/react-query'
 import { Chart } from 'chart.js'
 import EmptyState from '../../components/EmptyState'
 import SvgIcon from '../../components/SvgIcon'
-import Sparkline from '../../components/Sparkline'
+import HeroSparkline from '../../components/HeroSparkline'
 import RingChart from '../../components/RingChart'
 import { fetchCashflow } from '../../api/statements'
 import { fetchPeriods } from '../../api/periods'
@@ -191,7 +191,7 @@ export default function AssetsTab({ data, scopeLabel, selectedYear }: AssetsTabP
           </div>
         </div>
         <div style={{ alignSelf: 'stretch', display: 'flex', flexDirection: 'column' }}>
-          <Sparkline data={assetTotals.length ? assetTotals : [totalAssetsCurr]} labels={periodLabels.length ? periodLabels : undefined} showAxes fillContainer color="white" fill="rgba(255,255,255,0.22)" strokeWidth={2.2} />
+          <HeroSparkline data={assetTotals.length ? assetTotals : [totalAssetsCurr]} labels={periodLabels.length ? periodLabels : undefined} />
         </div>
       </div>
       <div className="grid grid-12">

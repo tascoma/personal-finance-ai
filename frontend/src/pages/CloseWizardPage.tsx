@@ -132,10 +132,12 @@ export default function CloseWizardPage() {
   const classify = useMutation({
     mutationFn: () => classifyTransactions(periodId!),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['journal', periodId] }) },
+    onError: (e: Error) => toast.error(`Classification failed: ${e.message}`),
   })
   const approveAll = useMutation({
     mutationFn: () => approveAllStaged(periodId!),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['journal', periodId] }) },
+    onError: (e: Error) => toast.error(`Could not approve transactions: ${e.message}`),
   })
   const postTxns = useMutation({
     mutationFn: async () => {
@@ -153,6 +155,7 @@ export default function CloseWizardPage() {
       qc.invalidateQueries({ queryKey: ['period', periodId] })
       toast.success('Transactions posted')
     },
+    onError: (e: Error) => toast.error(`Could not post transactions: ${e.message}`),
   })
   const updateAccount = useMutation({
     mutationFn: ({ txnId, accountCode }: { txnId: string; accountCode: number }) =>
@@ -231,6 +234,7 @@ export default function CloseWizardPage() {
       })),
     ),
     onSuccess: () => toast.success('Stated balances saved'),
+    onError: (e: Error) => toast.error(`Could not save balances: ${e.message}`),
   })
   const runRecon = useMutation({
     mutationFn: () => runReconciliation(periodId!),
@@ -248,10 +252,12 @@ export default function CloseWizardPage() {
       return postEquityRollup(periodId!)
     },
     onSuccess: (d) => qc.setQueryData(['reconcile', periodId], d),
+    onError: (e: Error) => toast.error(`Could not post closing entries: ${e.message}`),
   })
   const closePeriod = useMutation({
     mutationFn: () => updatePeriodStatus(periodId!, 'closed'),
     onSuccess: () => { invalidatePeriod(); setCompleted((c) => ({ ...c, 5: true })); toast.success('Period closed') },
+    onError: (e: Error) => toast.error(`Could not close the period: ${e.message}`),
   })
 
   const addEntry = useMutation({

@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { Chart } from 'chart.js'
 import EmptyState from '../../components/EmptyState'
 import SvgIcon from '../../components/SvgIcon'
-import Sparkline from '../../components/Sparkline'
+import HeroSparkline from '../../components/HeroSparkline'
 import RingChart from '../../components/RingChart'
 import { fmtMoney } from '../../utils/format'
-import { applyChartDefaults, getChartPalette, moneyTick } from './chartTheme'
+import { getChartPalette, moneyTick } from './chartTheme'
 import type { DashboardTabProps } from './constants'
 
 export default function ExpensesTab({ data, scopeLabel }: DashboardTabProps) {
@@ -47,7 +47,6 @@ export default function ExpensesTab({ data, scopeLabel }: DashboardTabProps) {
   useEffect(() => {
     if (!compRef.current || !data.top_expense_categories.length) return
     const palette = getChartPalette()
-    applyChartDefaults(palette)
     const { red, accent, green, amber } = palette
     const catColors = [red, amber, accent, green, '#a78bfa', '#38bdf8', '#fb923c', '#34d399']
     const comp = parseFloat(data.compensation_income)
@@ -106,7 +105,7 @@ export default function ExpensesTab({ data, scopeLabel }: DashboardTabProps) {
           </div>
         </div>
         <div style={{ alignSelf: 'stretch', display: 'flex', flexDirection: 'column' }}>
-          <Sparkline data={bars.map((b) => parseFloat(b.expenses))} labels={bars.map((b) => b.period_label)} showAxes fillContainer color="white" fill="rgba(255,255,255,0.22)" strokeWidth={2.2} />
+          <HeroSparkline data={bars.map((b) => parseFloat(b.expenses))} labels={bars.map((b) => b.period_label)} />
         </div>
       </div>
       <div className="grid grid-12">
