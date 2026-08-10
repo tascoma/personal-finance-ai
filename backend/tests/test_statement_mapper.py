@@ -4,6 +4,7 @@ These are pure-function tests — no DB or fixtures needed.
 """
 
 from datetime import date, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -41,8 +42,8 @@ def test_csv_happy_path_bank_ozk_shape():
     assert len(txns) == 2
     assert txns[0].txn_date == date(2026, 1, 5)
     assert txns[0].description == "Paycheck"
-    assert txns[0].amount == pytest.approx(2569.00)
-    assert txns[1].amount == pytest.approx(-25.00)
+    assert txns[0].amount == Decimal("2569.00")
+    assert txns[1].amount == Decimal("-25.00")
 
 
 def test_csv_happy_path_new_bank_ozk_shape_with_split_debit_credit():
@@ -61,20 +62,20 @@ def test_csv_happy_path_new_bank_ozk_shape_with_split_debit_credit():
     assert len(txns) == 2
     # Credit is money in, debit is money out — the sign convention the statement
     # extractor prompt and the journal builder both already assume.
-    assert txns[0].amount == pytest.approx(2541.90)
-    assert txns[1].amount == pytest.approx(-160.00)
+    assert txns[0].amount == Decimal("2541.90")
+    assert txns[1].amount == Decimal("-160.00")
     assert txns[0].txn_date == date(2026, 7, 30)
 
 
 def test_split_columns_with_both_sides_populated_net_out():
     txns = csv_to_transactions([new_format_row(Debit="40.00", Credit="100.00")])
-    assert txns[0].amount == pytest.approx(60.00)
+    assert txns[0].amount == Decimal("60.00")
 
 
 def test_split_columns_ignore_a_sign_the_bank_already_applied():
     # A "-160.00" inside a column named Debit must not be negated twice.
     txns = csv_to_transactions([new_format_row(Debit="-160.00", Credit="")])
-    assert txns[0].amount == pytest.approx(-160.00)
+    assert txns[0].amount == Decimal("-160.00")
 
 
 def test_rows_with_neither_debit_nor_credit_are_skipped():
@@ -172,7 +173,6 @@ def stub_schema_mapper(monkeypatch, **fields):
     return seen
 
 
-@pytest.mark.asyncio
 async def test_known_format_never_calls_the_agent(monkeypatch):
     async def explode(prompt):  # pragma: no cover - must not run
         raise AssertionError("the deterministic tier should have resolved this")
@@ -180,10 +180,9 @@ async def test_known_format_never_calls_the_agent(monkeypatch):
     monkeypatch.setattr(statement_mapper, "run_schema_mapper", explode)
     txns, used_llm = await statement_mapper.csv_to_transactions_async([new_format_row()])
     assert used_llm is False
-    assert txns[0].amount == pytest.approx(2541.90)
+    assert txns[0].amount == Decimal("2541.90")
 
 
-@pytest.mark.asyncio
 async def test_agent_resolves_an_unknown_layout(monkeypatch):
     stub_schema_mapper(
         monkeypatch,
@@ -197,11 +196,10 @@ async def test_agent_resolves_an_unknown_layout(monkeypatch):
 
     assert used_llm is True
     assert [t.description for t in txns] == ["SUPERMERCADO", "NOMINA"]
-    assert txns[0].amount == pytest.approx(-54.20)
-    assert txns[1].amount == pytest.approx(1200.00)
+    assert txns[0].amount == Decimal("-54.20")
+    assert txns[1].amount == Decimal("1200.00")
 
 
-@pytest.mark.asyncio
 async def test_agent_prompt_carries_headers_and_redacted_samples(monkeypatch):
     seen = stub_schema_mapper(
         monkeypatch,
@@ -220,7 +218,6 @@ async def test_agent_prompt_carries_headers_and_redacted_samples(monkeypatch):
     assert "21229022" not in prompt                    # ...but identifiers do not
 
 
-@pytest.mark.asyncio
 async def test_agent_column_that_is_not_in_the_file_is_rejected(monkeypatch):
     # A hallucinated column name must fail loudly rather than mis-map a number.
     stub_schema_mapper(
@@ -234,7 +231,6 @@ async def test_agent_column_that_is_not_in_the_file_is_rejected(monkeypatch):
         await statement_mapper.csv_to_transactions_async(FOREIGN_ROWS)
 
 
-@pytest.mark.asyncio
 async def test_agent_must_return_an_amount_or_a_debit_credit_pair(monkeypatch):
     stub_schema_mapper(
         monkeypatch, date_column="Fecha", description_columns=["Concepto"], debit_column="Cargo"
@@ -243,7 +239,6 @@ async def test_agent_must_return_an_amount_or_a_debit_credit_pair(monkeypatch):
         await statement_mapper.csv_to_transactions_async(FOREIGN_ROWS)
 
 
-@pytest.mark.asyncio
 async def test_agent_cannot_map_an_identifier_column_onto_the_description(monkeypatch):
     stub_schema_mapper(
         monkeypatch,
@@ -268,8 +263,8 @@ def test_xlsx_happy_path_numeric_amounts_and_datetime_dates():
     assert txns[0].txn_date == date(2026, 2, 1)
     # "Name" is in DESC_ALIASES and wins over the non-aliased "Transaction" column.
     assert txns[0].description == "Store"
-    assert txns[0].amount == pytest.approx(-54.20)
-    assert txns[1].amount == pytest.approx(12.00)
+    assert txns[0].amount == Decimal("-54.20")
+    assert txns[1].amount == Decimal("12.00")
 
 
 @pytest.mark.parametrize("date_header", ["Date", "Transaction Date", "Posted Date", "Post Date"])
@@ -290,7 +285,7 @@ def test_description_column_aliases(desc_header):
 def test_amount_column_aliases(amount_header):
     rows = [{"Date": "2026-03-01", "Description": "X", amount_header: "10"}]
     txns = csv_to_transactions(rows)
-    assert txns[0].amount == pytest.approx(10.0)
+    assert txns[0].amount == Decimal("10.0")
 
 
 @pytest.mark.parametrize(
@@ -312,16 +307,16 @@ def test_all_supported_date_formats(raw, expected):
 @pytest.mark.parametrize(
     "raw,expected",
     [
-        ("$1,234.56", 1234.56),
-        ("(12.34)", -12.34),
-        ("($1,000.00)", -1000.00),
-        ("  $42 ", 42.0),
-        ("-5.5", -5.5),
+        ("$1,234.56", Decimal("1234.56")),
+        ("(12.34)", Decimal("-12.34")),
+        ("($1,000.00)", Decimal("-1000.00")),
+        ("  $42 ", Decimal("42")),
+        ("-5.5", Decimal("-5.5")),
     ],
 )
 def test_amount_format_edge_cases(raw, expected):
     rows = [{"Date": "2026-03-01", "Description": "X", "Amount": raw}]
-    assert csv_to_transactions(rows)[0].amount == pytest.approx(expected)
+    assert csv_to_transactions(rows)[0].amount == expected
 
 
 def test_empty_rows_raise():
@@ -379,7 +374,7 @@ def test_ragged_rows_do_not_fail_the_document():
     txns = xlsx_to_transactions(rows)
     # The short row carries no amount, so it is skipped rather than posted at zero.
     assert [t.description for t in txns] == ["PAYROLL", "COFFEE"]
-    assert txns[1].amount == pytest.approx(-4.50)
+    assert txns[1].amount == Decimal("-4.50")
 
 
 def test_ragged_row_missing_only_its_status_is_still_posted():
@@ -402,11 +397,10 @@ def test_xlsx_supports_split_debit_credit_and_status():
     ]
     txns = xlsx_to_transactions(rows)
     assert [t.description for t in txns] == ["PAYROLL", "VENMO"]
-    assert txns[0].amount == pytest.approx(2541.90)
-    assert txns[1].amount == pytest.approx(-160.00)
+    assert txns[0].amount == Decimal("2541.90")
+    assert txns[1].amount == Decimal("-160.00")
 
 
-@pytest.mark.asyncio
 async def test_xlsx_falls_back_to_the_agent_too(monkeypatch):
     stub_schema_mapper(
         monkeypatch,
@@ -418,10 +412,9 @@ async def test_xlsx_falls_back_to_the_agent_too(monkeypatch):
     rows = [["Fecha", "Concepto", "Cargo", "Abono"], ["2026-03-01", "SUPERMERCADO", 54.20, None]]
     txns, used_llm = await statement_mapper.xlsx_to_transactions_async(rows)
     assert used_llm is True
-    assert txns[0].amount == pytest.approx(-54.20)
+    assert txns[0].amount == Decimal("-54.20")
 
 
-@pytest.mark.asyncio
 async def test_schema_prompt_is_raw_when_the_flag_is_off(monkeypatch):
     monkeypatch.setattr(settings, "scrub_before_llm", False)
     seen = stub_schema_mapper(

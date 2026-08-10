@@ -1,16 +1,19 @@
-import uuid
 from datetime import date
 from decimal import Decimal
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.databases import Base, init_db, _seed_accounts_if_empty
+from app.databases import Base, init_db
 from app.models import (
-    Account, JournalEntry, JournalLine, Period, StatedBalance,
+    Account,
+    JournalEntry,
+    JournalLine,
+    Period,
+    StatedBalance,
 )
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
@@ -53,7 +56,6 @@ async def seeded_engine():
     await eng.dispose()
 
 
-@pytest.mark.asyncio
 async def test_accounts_seeded(seeded_engine):
     factory = async_sessionmaker(seeded_engine, expire_on_commit=False)
     async with factory() as session:
@@ -61,7 +63,6 @@ async def test_accounts_seeded(seeded_engine):
     assert count == 69
 
 
-@pytest.mark.asyncio
 async def test_period_create(session: AsyncSession):
     period = Period(
         period_start=date(2024, 1, 1),
@@ -78,7 +79,6 @@ async def test_period_create(session: AsyncSession):
     assert result.status == "open"
 
 
-@pytest.mark.asyncio
 async def test_journal_entry_balanced(session: AsyncSession):
     # Seed two minimal accounts so FKs resolve
     checking = Account(
@@ -132,11 +132,10 @@ async def test_journal_entry_balanced(session: AsyncSession):
         select(JournalLine).where(JournalLine.entry_id == entry.entry_id)
     )).all()
     assert len(lines) == 2
-    net = sum(l.debit_amount - l.credit_amount for l in lines)
+    net = sum(ln.debit_amount - ln.credit_amount for ln in lines)
     assert net == Decimal("0.00")
 
 
-@pytest.mark.asyncio
 async def test_journal_line_check_constraint(session: AsyncSession):
     checking = Account(
         account_code=100101,
@@ -174,7 +173,6 @@ async def test_journal_line_check_constraint(session: AsyncSession):
         await session.commit()
 
 
-@pytest.mark.asyncio
 async def test_stated_balance_unique(session: AsyncSession):
     checking = Account(
         account_code=100101,
@@ -207,3 +205,39 @@ async def test_stated_balance_unique(session: AsyncSession):
     session.add(b2)
     with pytest.raises(IntegrityError):
         await session.commit()
+
+
+async def test_every_model_module_is_exported_from_app_models():
+    """Every model class on disk must be re-exported by `app.models`.
+
+    Alembic's autogenerate and `init_db()`'s `create_all` both diff against
+    `Base.metadata`, which is populated purely as an import side effect. A model
+    that exists on disk but is not imported by `app/models/__init__.py` is
+    invisible to both: `create_all` silently skips the table, and the next
+    `alembic revision --autogenerate` emits a `drop_table` for it. That is
+    exactly what happened to `device_tokens`.
+
+    Note this asserts on the package's *exported attributes*, not on
+    `Base.metadata` — importing a module to discover its models would itself
+    register them and make the assertion vacuous.
+    """
+    import importlib
+    import pkgutil
+
+    import app.models
+
+    missing: list[str] = []
+    for mod in pkgutil.iter_modules(app.models.__path__):
+        module = importlib.import_module(f"app.models.{mod.name}")
+        for name, obj in vars(module).items():
+            if not isinstance(getattr(obj, "__tablename__", None), str):
+                continue
+            if getattr(obj, "__module__", "") != module.__name__:
+                continue  # imported into the module, not defined there
+            if getattr(app.models, name, None) is not obj:
+                missing.append(f"{mod.name}.{name}")
+
+    assert not missing, (
+        f"model(s) not exported from app.models: {sorted(missing)} — add to "
+        "app/models/__init__.py so Base.metadata registration is guaranteed"
+    )

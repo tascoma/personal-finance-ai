@@ -1,4 +1,5 @@
 from app.models.account import Account
+from app.models.device_token import DeviceToken
 from app.models.document import Document
 from app.models.journal import JournalEntry, JournalLine
 from app.models.period import Period
@@ -19,4 +20,5 @@ __all__ = [
     "Reconciliation",
     "ReviewQueue",
     "User",
+    "DeviceToken",
 ]

@@ -24,9 +24,8 @@ that yields SSE-compatible progress dicts throughout execution.
 
 import logging
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
-from typing import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,7 +81,10 @@ def _build_digest(document: Document, keep_terms: Sequence[str] = ()) -> Documen
             cells, _ = redact_columns(
                 headers, [[r.get(h) for h in headers] for r in rows[:TABULAR_PEEK_ROWS]]
             )
-            peek = "\n".join(", ".join(f"{h}={v}" for h, v in zip(headers, row)) for row in cells)
+            peek = "\n".join(
+                ", ".join(f"{h}={v}" for h, v in zip(headers, row, strict=False))
+                for row in cells
+            )
         elif extension == ".xlsx":
             rows_x = extract_xlsx_rows(path)
             headers_x = [str(c) if c is not None else "" for c in rows_x[0]]
@@ -293,7 +295,6 @@ async def orchestrate_parse_stream(
             )
             doc.document_type = step.resolved_type
 
-        resolved_account_name: str | None = None
         resolved_code: int | None = step.resolved_source_account_code
         if resolved_code is not None:
             account = accounts_by_code.get(resolved_code)
@@ -305,7 +306,6 @@ async def orchestrate_parse_stream(
                 )
                 resolved_code = None
             else:
-                resolved_account_name = account.account_name
                 if doc.source_account_code != account.account_code:
                     logger.info(
                         "Orchestrator set source_account_code=%s on document %s (reason: %s)",
@@ -366,7 +366,7 @@ async def orchestrate_parse_stream(
                 "total": total_planned,
                 "status": "failed",
             }
-        except Exception as exc:
+        except Exception:
             logger.exception(
                 "Unexpected error parsing document %s (%s) as %s",
                 doc_id,

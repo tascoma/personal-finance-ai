@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -12,7 +12,7 @@ class AccountRead(BaseModel):
     account_type: str
     sub_category: str
     normal_balance: str
-    paystub_mapping: Optional[str]
+    paystub_mapping: str | None
     is_memo: bool
     is_active: bool
 
@@ -25,7 +25,7 @@ class AccountCreate(BaseModel):
     account_type: AccountType
     sub_category: str = Field(min_length=1)
     normal_balance: NormalBalance
-    paystub_mapping: Optional[str] = None
+    paystub_mapping: str | None = None
     is_memo: bool = False
 
 
@@ -33,10 +33,10 @@ class AccountUpdate(BaseModel):
     """Partial update. Only fields present in the request are applied
     (`is_active=False` archives the account; `True` restores it)."""
 
-    account_name: Optional[str] = Field(default=None, min_length=1)
-    account_type: Optional[AccountType] = None
-    sub_category: Optional[str] = Field(default=None, min_length=1)
-    normal_balance: Optional[NormalBalance] = None
-    paystub_mapping: Optional[str] = None
-    is_memo: Optional[bool] = None
-    is_active: Optional[bool] = None
+    account_name: str | None = Field(default=None, min_length=1)
+    account_type: AccountType | None = None
+    sub_category: str | None = Field(default=None, min_length=1)
+    normal_balance: NormalBalance | None = None
+    paystub_mapping: str | None = None
+    is_memo: bool | None = None
+    is_active: bool | None = None

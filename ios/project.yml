@@ -139,6 +139,14 @@ targets:
         group: Core/Models
       - path: Shared/Money.swift
         group: Shared
+      # Forecast is ~137 lines of least-squares projection arithmetic and was
+      # entirely untested; it imports Foundation only, so it compiles here with
+      # no other changes.
+      - path: Features/Dashboard/Math/Forecast.swift
+        group: Features/Dashboard/Math
+      # Forecast's inputs are Dashboard model types.
+      - path: Core/Models/Dashboard.swift
+        group: Core/Models
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tascoma.personalfinanceai.tests

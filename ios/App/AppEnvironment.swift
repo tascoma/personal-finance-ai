@@ -37,9 +37,13 @@ final class AppEnvironment {
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
         let fallback = "http://127.0.0.1:8000"
         let source = trimmed.isEmpty ? fallback : (trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed)
-        guard let url = URL(string: source + "/api/v1"), url.scheme != nil, url.host != nil else {
-            fatalError("Invalid API_BASE_URL: '\(raw)' (resolved to '\(source)')")
+        if let url = URL(string: source + "/api/v1"), url.scheme != nil, url.host != nil {
+            return url
         }
-        return url
+        // Fall back rather than fatalError: a typo in Release.xcconfig would
+        // otherwise ship a crash-on-launch to the App Store, and the local
+        // fallback above is already the sane default for a malformed value.
+        assertionFailure("Invalid API_BASE_URL: '\(raw)' (resolved to '\(source)')")
+        return URL(string: fallback + "/api/v1")!
     }
 }

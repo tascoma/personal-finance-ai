@@ -10,11 +10,11 @@ import hashlib
 import logging
 import re
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Sequence
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -178,7 +178,7 @@ async def parse_document(
             await db.commit()
             raise ParseError(f"Unexpected parse failure: {exc}") from exc
         document.parse_status = "complete"
-        document.parsed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        document.parsed_at = datetime.now(UTC).replace(tzinfo=None)
         document.llm_model = None
         await db.commit()
         logger.info(
@@ -213,7 +213,7 @@ async def parse_document(
         raise ParseError(f"Unexpected parse failure: {exc}") from exc
 
     document.parse_status = "complete"
-    document.parsed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    document.parsed_at = datetime.now(UTC).replace(tzinfo=None)
     document.llm_model = llm_model
     await db.commit()
     logger.info(
@@ -357,7 +357,7 @@ async def _prepare_statement_txns(
             _PreparedTxn(
                 txn_date=t.txn_date,
                 description=t.description,
-                amount=Decimal(str(t.amount)),
+                amount=t.amount,
                 suggested_account_code=suggested,
                 classifier_confidence=confidence,
                 is_flagged=False,
@@ -381,7 +381,7 @@ async def _prepare_paystub_lines(
                     _PreparedTxn(
                         txn_date=paystub.pay_date,
                         description=line.label,
-                        amount=Decimal(str(line.amount)),  # always positive
+                        amount=line.amount,  # always positive
                         suggested_account_code=source_account_code,
                         classifier_confidence=Decimal("1.000") if source_account_code else Decimal("0"),
                         is_flagged=source_account_code is None,
@@ -423,7 +423,7 @@ def _prepare_mortgage_lines(
 ) -> list[_PreparedTxn]:
     prepared: list[_PreparedTxn] = []
     for field, description, account_code in _MORTGAGE_COMPONENTS:
-        amount = Decimal(str(getattr(mortgage, field)))
+        amount = getattr(mortgage, field)
         if amount <= Decimal("0"):
             continue
         prepared.append(
@@ -441,7 +441,7 @@ def _prepare_mortgage_lines(
 
 def _signed_paystub_amount(line: PaystubLine) -> Decimal:
     """Earnings are positive; deductions and taxes reduce net pay (stored negative)."""
-    amount = Decimal(str(line.amount))
+    amount = line.amount
     if line.kind == "earning":
         return amount
     return -amount

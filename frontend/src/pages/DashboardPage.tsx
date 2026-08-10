@@ -26,6 +26,8 @@ const TAB_HEADING: Record<DashboardTab, { eyebrow: string; title: string }> = {
 // `null` selected year means "All Years".
 const ALL_YEARS = null
 
+const DASHBOARD_STALE_TIME = 5 * 60_000
+
 export default function DashboardPage() {
   const [selectedYear, setSelectedYear] = useState<number | null>(ALL_YEARS)
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview')
@@ -52,8 +54,6 @@ export default function DashboardPage() {
   }, [availableYears])
 
   const scopeLabel = selectedYear == null ? 'All Years' : String(selectedYear)
-
-  const DASHBOARD_STALE_TIME = 5 * 60_000
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ['dashboard', selectedYear],

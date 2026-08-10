@@ -8,47 +8,13 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.databases import Base
-from app.dependencies import get_current_user, get_db_session
 from app.main import app
 from app.models.account import Account
 from app.models.journal import JournalEntry, JournalLine
 from app.models.period import Period
-from app.models.user import User
-
-TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
-
-
-@pytest_asyncio.fixture
-async def session_factory():
-    eng = create_async_engine(TEST_DB_URL, echo=False)
-    async with eng.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    factory = async_sessionmaker(eng, expire_on_commit=False)
-    yield factory
-    await eng.dispose()
-
-
-@pytest_asyncio.fixture
-async def client(session_factory):
-    async def override_get_db_session():
-        async with session_factory() as session:
-            yield session
-
-    async def _mock_user() -> User:
-        return User(user_id=uuid.uuid4(), email="test@test.com", hashed_password="", is_active=True)
-
-    app.dependency_overrides[get_db_session] = override_get_db_session
-    app.dependency_overrides[get_current_user] = _mock_user
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-    app.dependency_overrides.clear()
 
 
 @pytest_asyncio.fixture
@@ -107,7 +73,6 @@ async def closed_period_with_entries(session_factory):
         return period.period_id, 2026
 
 
-@pytest.mark.asyncio
 async def test_dashboard_empty_returns_no_data(client: AsyncClient):
     response = await client.get("/api/v1/dashboard")
     assert response.status_code == 200
@@ -119,7 +84,6 @@ async def test_dashboard_empty_returns_no_data(client: AsyncClient):
     assert body["top_expense_categories"] == []
 
 
-@pytest.mark.asyncio
 async def test_dashboard_aggregates_closed_period_entries(
     client: AsyncClient, closed_period_with_entries
 ):
@@ -140,7 +104,6 @@ async def test_dashboard_aggregates_closed_period_entries(
     assert Decimal(body["top_expense_categories"][0]["amount"]) == Decimal("125.00")
 
 
-@pytest.mark.asyncio
 async def test_dashboard_year_filter(client: AsyncClient, closed_period_with_entries):
     _, year = closed_period_with_entries
 
@@ -155,7 +118,6 @@ async def test_dashboard_year_filter(client: AsyncClient, closed_period_with_ent
     assert other.json()["period_bars"] == []
 
 
-@pytest.mark.asyncio
 async def test_dashboard_unknown_period_filter_returns_empty_aggregates(
     client: AsyncClient, closed_period_with_entries
 ):
@@ -226,7 +188,6 @@ async def closed_period_with_lifestyle(session_factory):
         return period.period_id
 
 
-@pytest.mark.asyncio
 async def test_dashboard_lifestyle_and_category_series(
     client: AsyncClient, closed_period_with_lifestyle
 ):
@@ -318,7 +279,6 @@ async def two_closed_periods_with_assets(session_factory):
         return p1.period_id, p2.period_id
 
 
-@pytest.mark.asyncio
 async def test_dashboard_asset_composition_excludes_memo(
     client: AsyncClient, two_closed_periods_with_assets
 ):
@@ -339,7 +299,6 @@ async def test_dashboard_asset_composition_excludes_memo(
     assert comp[0]["sub_category"] == "Cash"
 
 
-@pytest.mark.asyncio
 async def test_dashboard_asset_series_per_period_per_subcat(
     client: AsyncClient, two_closed_periods_with_assets
 ):
@@ -421,7 +380,6 @@ async def open_seed_then_closed_period(session_factory):
         return seed.period_id, closed.period_id
 
 
-@pytest.mark.asyncio
 async def test_dashboard_includes_open_seed_period_in_balance_sheet(
     client: AsyncClient, open_seed_then_closed_period
 ):
@@ -514,7 +472,6 @@ def _buckets(section: list[dict]) -> dict[str, Decimal]:
     return {b["category"]: Decimal(b["amount"]) for b in section}
 
 
-@pytest.mark.asyncio
 async def test_money_flow_income_grouped_and_sorted(
     client: AsyncClient, closed_period_with_mixed_income
 ):
@@ -530,7 +487,6 @@ async def test_money_flow_income_grouped_and_sorted(
     assert amounts == sorted(amounts, reverse=True)
 
 
-@pytest.mark.asyncio
 async def test_money_flow_income_sums_to_total_income(
     client: AsyncClient, closed_period_with_mixed_income
 ):
@@ -540,7 +496,6 @@ async def test_money_flow_income_sums_to_total_income(
     assert total == Decimal(body["total_income"]) == Decimal("9000.00")
 
 
-@pytest.mark.asyncio
 async def test_money_flow_excludes_oci_entry_whole(
     client: AsyncClient, closed_period_with_mixed_income
 ):
@@ -554,7 +509,6 @@ async def test_money_flow_excludes_oci_entry_whole(
     assert "Investments" not in _buckets(flow["fund_flows"])
 
 
-@pytest.mark.asyncio
 async def test_money_flow_nets_contra_income(
     client: AsyncClient, closed_period_with_mixed_income
 ):
@@ -564,13 +518,11 @@ async def test_money_flow_nets_contra_income(
     assert _buckets(body["money_flow"]["income"])["Investment Income"] == Decimal("1000.00")
 
 
-@pytest.mark.asyncio
 async def test_money_flow_empty_without_activity(client: AsyncClient):
     body = (await client.get("/api/v1/dashboard")).json()
     assert body["money_flow"] == {"income": [], "expenses": [], "fund_flows": []}
 
 
-@pytest.mark.asyncio
 async def test_money_flow_scoped_by_year(
     client: AsyncClient, closed_period_with_entries
 ):
@@ -671,7 +623,6 @@ async def closed_period_with_full_flows(session_factory):
         return period.period_id
 
 
-@pytest.mark.asyncio
 async def test_money_flow_balances(client: AsyncClient, closed_period_with_full_flows):
     """The identity the whole model exists to guarantee. Exact, not approximate."""
     flow = (await client.get("/api/v1/dashboard")).json()["money_flow"]
@@ -684,7 +635,6 @@ async def test_money_flow_balances(client: AsyncClient, closed_period_with_full_
     assert income == Decimal("9500.00")
 
 
-@pytest.mark.asyncio
 async def test_money_flow_includes_noncash_income(
     client: AsyncClient, closed_period_with_full_flows
 ):
@@ -696,7 +646,6 @@ async def test_money_flow_includes_noncash_income(
     assert _buckets(flow["fund_flows"])["Retirement & Tax-Advantaged Accounts"] == Decimal("1500.00")
 
 
-@pytest.mark.asyncio
 async def test_money_flow_includes_debt_principal(
     client: AsyncClient, closed_period_with_full_flows
 ):
@@ -704,7 +653,6 @@ async def test_money_flow_includes_debt_principal(
     assert _buckets(flow["fund_flows"])["Long-Term Debt"] == Decimal("1200.00")
 
 
-@pytest.mark.asyncio
 async def test_money_flow_cash_decrease_is_negative(
     client: AsyncClient, closed_period_with_full_flows
 ):
@@ -715,7 +663,6 @@ async def test_money_flow_cash_decrease_is_negative(
     assert _buckets(flow["fund_flows"])["Cash & Cash Equivalents"] == Decimal("-600.00")
 
 
-@pytest.mark.asyncio
 async def test_money_flow_excludes_opening_balance_entry(
     client: AsyncClient, closed_period_with_full_flows
 ):
@@ -726,7 +673,6 @@ async def test_money_flow_excludes_opening_balance_entry(
     assert "Contributed Capital" not in _buckets(flow["fund_flows"])
 
 
-@pytest.mark.asyncio
 async def test_money_flow_excludes_memo_entry(
     client: AsyncClient, closed_period_with_full_flows
 ):
@@ -734,7 +680,6 @@ async def test_money_flow_excludes_memo_entry(
     assert "Memo" not in _buckets(flow["fund_flows"])
 
 
-@pytest.mark.asyncio
 async def test_dashboard_requires_auth():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -845,7 +790,6 @@ def _sum(section: list[dict]) -> Decimal:
     return sum((Decimal(b["amount"]) for b in section), Decimal("0"))
 
 
-@pytest.mark.asyncio
 async def test_paycheck_flow_balances(client: AsyncClient, closed_period_with_paystub):
     flow = (await client.get("/api/v1/dashboard")).json()["paycheck_flow"]
     take_home = Decimal(flow["take_home"])
@@ -856,7 +800,6 @@ async def test_paycheck_flow_balances(client: AsyncClient, closed_period_with_pa
     assert take_home + _sum(flow["other_income"]) + _sum(flow["drawdowns"]) == _sum(flow["uses"])
 
 
-@pytest.mark.asyncio
 async def test_paycheck_take_home_is_net_cash(client: AsyncClient, closed_period_with_paystub):
     flow = (await client.get("/api/v1/dashboard")).json()["paycheck_flow"]
 
@@ -871,7 +814,6 @@ async def test_paycheck_take_home_is_net_cash(client: AsyncClient, closed_period
     }
 
 
-@pytest.mark.asyncio
 async def test_paycheck_hsa_is_a_deduction_not_take_home(
     client: AsyncClient, closed_period_with_paystub
 ):
@@ -885,7 +827,6 @@ async def test_paycheck_hsa_is_a_deduction_not_take_home(
     assert ded["Employee Benefits"] == Decimal("300.00")
 
 
-@pytest.mark.asyncio
 async def test_paycheck_employer_contribs_flow_through_deductions(
     client: AsyncClient, closed_period_with_paystub
 ):
@@ -903,7 +844,6 @@ async def test_paycheck_employer_contribs_flow_through_deductions(
     assert ded["ComputerShare – ASPP"] == Decimal("400.00")
 
 
-@pytest.mark.asyncio
 async def test_paycheck_cash_saved_is_a_use(client: AsyncClient, closed_period_with_paystub):
     flow = (await client.get("/api/v1/dashboard")).json()["paycheck_flow"]
     uses = _buckets(flow["uses"])
@@ -950,7 +890,6 @@ async def closed_period_with_overspend(session_factory):
         return period.period_id
 
 
-@pytest.mark.asyncio
 async def test_paycheck_drawdown_when_overspending(
     client: AsyncClient, closed_period_with_overspend
 ):
@@ -963,10 +902,95 @@ async def test_paycheck_drawdown_when_overspending(
     assert Decimal(flow["take_home"]) + _sum(flow["drawdowns"]) == _sum(flow["uses"])
 
 
-@pytest.mark.asyncio
 async def test_paycheck_flow_empty_without_activity(client: AsyncClient):
     flow = (await client.get("/api/v1/dashboard")).json()["paycheck_flow"]
     assert flow == {
         "earnings": [], "deductions": [], "employer": [],
-        "take_home": "0", "other_income": [], "drawdowns": [], "uses": [],
+        "take_home": "0.00", "other_income": [], "drawdowns": [], "uses": [],
     }
+
+
+@pytest_asyncio.fixture
+async def period_with_round_amounts(session_factory):
+    """Seed amounts that expose the money-string format on the wire.
+
+    Values ending in a zero cent (0.10, 0.20) render as "0.10" from a Decimal
+    but "0.1" from a float, which is how the two formats become visible.
+    """
+    async with session_factory() as session:
+        period = Period(
+            period_start=date(2026, 3, 1),
+            period_end=date(2026, 3, 31),
+            status="closed",
+            closed_at=datetime(2026, 4, 1),
+        )
+        session.add(period)
+        session.add_all([
+            Account(account_code=100101, account_name="Checking", account_type="Asset",
+                    sub_category="Cash", normal_balance="debit", is_memo=False, is_active=True),
+            Account(account_code=600101, account_name="Groceries", account_type="Expense",
+                    sub_category="Food", normal_balance="debit", is_memo=False, is_active=True),
+        ])
+        await session.flush()
+
+        for amount in (Decimal("0.10"), Decimal("0.20")):
+            entry = JournalEntry(
+                entry_id=uuid.uuid4(),
+                period_id=period.period_id,
+                entry_date=date(2026, 3, 10),
+                description=f"Snack {amount}",
+                source_type="manual",
+            )
+            session.add(entry)
+            await session.flush()
+            session.add_all([
+                JournalLine(line_id=uuid.uuid4(), entry_id=entry.entry_id,
+                            account_code=600101, debit_amount=amount, credit_amount=Decimal("0")),
+                JournalLine(line_id=uuid.uuid4(), entry_id=entry.entry_id,
+                            account_code=100101, debit_amount=Decimal("0"), credit_amount=amount),
+            ])
+        await session.commit()
+
+        return period.period_id
+
+
+async def test_dashboard_money_strings_all_have_two_decimal_places(
+    client: AsyncClient, period_with_round_amounts
+):
+    """Every monetary string in the payload must be a 2-dp decimal string.
+
+    These fields aggregate Numeric(15, 2) columns and the route serializes them
+    with str(). When a chart dataclass field was typed `float`, str() went
+    through the float repr instead: the same response carried "3000.00" from
+    the Decimal-typed money_flow buckets and "3000.0" from the float-typed
+    expense categories — two money formats in one document.
+
+    Walk the whole response rather than naming fields, so a field added as
+    float later is caught too.
+    """
+    response = await client.get("/api/v1/dashboard")
+    assert response.status_code == 200
+
+    money_keys = {
+        "amount", "net", "income", "expenses", "net_worth", "total_debit",
+        "take_home", "total_income", "total_expenses", "net_income",
+        "total_assets", "total_liabilities", "beginning_cash", "ending_cash",
+    }
+    offenders: list[str] = []
+
+    def walk(node, path: str, key: str | None = None) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                walk(v, f"{path}.{k}", k)
+        elif isinstance(node, list):
+            for i, v in enumerate(node):
+                walk(v, f"{path}[{i}]", key)
+        elif isinstance(node, float):
+            offenders.append(f"{path} = {node!r} (float; money must serialize as str)")
+        elif isinstance(node, str) and key in money_keys:
+            _, dot, frac = node.partition(".")
+            if not dot or len(frac) != 2:
+                offenders.append(f"{path} = {node!r} (expected 2 decimal places)")
+
+    walk(response.json(), "$")
+    assert not offenders, "inconsistent money serialization:\n" + "\n".join(offenders)

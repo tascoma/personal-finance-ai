@@ -8,11 +8,13 @@ interface Props {
   tabs: Tab[]
   active: string
   onChange: (key: string) => void
+  /** Extra classes for the container, e.g. `print-hide`. */
+  className?: string
 }
 
-export default function Tabs({ tabs, active, onChange }: Props) {
+export default function Tabs({ tabs, active, onChange, className }: Props) {
   return (
-    <div className="tabs">
+    <div className={className ? `tabs ${className}` : 'tabs'}>
       {tabs.map((t) => (
         <button
           key={t.key}

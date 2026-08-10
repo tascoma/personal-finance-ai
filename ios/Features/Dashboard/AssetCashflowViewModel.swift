@@ -13,12 +13,7 @@ final class AssetCashflowViewModel {
         var id: String { rawValue }
     }
 
-    enum State: Equatable {
-        case idle
-        case loading
-        case loaded(CashflowStatementResponse)
-        case error(String)
-    }
+    typealias State = LoadState<CashflowStatementResponse>
 
     var state: State = .idle
     var scope: Scope = .period
@@ -80,7 +75,13 @@ final class AssetCashflowViewModel {
         let endpoint: Endpoint
         switch scope {
         case .period:
-            guard let selectedPeriodId else { return }
+            // Returning here while state == .loading would strand the view on a
+            // spinner with nothing left to resolve it. Reachable when configure()
+            // runs with periods present but the selection cleared.
+            guard let selectedPeriodId else {
+                state = .error("No period selected")
+                return
+            }
             endpoint = .cashflowStatement(periodId: selectedPeriodId)
         case .aggregate:
             endpoint = .cashflowStatement(year: year)

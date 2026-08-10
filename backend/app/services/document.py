@@ -7,8 +7,8 @@ parsing happens later in the Parse phase. Documents always start at
 
 import logging
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from fastapi import UploadFile
 from sqlalchemy import delete, select

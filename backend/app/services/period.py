@@ -17,8 +17,8 @@ Business rules:
 import calendar
 import logging
 import uuid
-from datetime import date, datetime, timezone
-from typing import Sequence
+from collections.abc import Sequence
+from datetime import UTC, date, datetime
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -130,7 +130,7 @@ async def update_status(
 
     period.status = new_status
     if new_status == "closed":
-        period.closed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        period.closed_at = datetime.now(UTC).replace(tzinfo=None)
     await db.commit()
     await db.refresh(period)
     logger.info("Period %s → %s", period.period_id, new_status)

@@ -1,47 +1,49 @@
-"""Dashboard metrics — all data computed in two queries (lines + recent entries)."""
+"""Dashboard metrics — all data computed in two queries (lines + recent entries).
+
+Every monetary field on the chart dataclasses below is `Decimal`, matching the
+`Numeric(15, 2)` columns they aggregate. The route layer serializes them with
+`str(...)`, so a float anywhere in this chain would leak its repr into the API
+(a period net of 1234.56 arriving at the client as "1234.5600000000001").
+"""
 
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.money import ZERO as _ZERO
 from app.models.account import Account
 from app.models.journal import JournalEntry, JournalLine
 from app.models.period import Period
 from app.services.statements import OCI_ACCOUNT_CODES
 
-_ZERO = Decimal("0")
-
 
 @dataclass
 class PeriodBar:
     label: str
-    income: float
-    expenses: float
-    net: float
+    income: Decimal
+    expenses: Decimal
+    net: Decimal
 
 
 @dataclass
 class NetWorthPoint:
     label: str
-    net_worth: float
+    net_worth: Decimal
 
 
 @dataclass
 class ExpenseCategory:
     label: str
-    amount: float
+    amount: Decimal
 
 
 @dataclass
 class MoneyFlowBucket:
     label: str
-    # Decimal, not float like the other chart points — the money-flow identity
-    # below must hold exactly, and str(Decimal) serializes without repr noise.
     amount: Decimal
 
 
@@ -131,27 +133,27 @@ class PaycheckFlow:
 class ExpenseCategorySeriesPoint:
     period_label: str
     category: str
-    amount: float
+    amount: Decimal
 
 
 @dataclass
 class AssetCompositionPoint:
     sub_category: str
-    amount: float
+    amount: Decimal
 
 
 @dataclass
 class AssetSeriesPoint:
     period_label: str
     sub_category: str
-    amount: float
+    amount: Decimal
 
 
 @dataclass
 class RetirementContributionPoint:
     account_code: int
     account_name: str
-    amount: float
+    amount: Decimal
 
 
 @dataclass
@@ -160,7 +162,7 @@ class RecentEntry:
     entry_date: str
     source_type: str
     period_label: str
-    total_debit: float
+    total_debit: Decimal
 
 
 @dataclass
@@ -193,7 +195,7 @@ class DashboardData:
     tax_advantaged: Decimal
     tax_advantaged_prev: Decimal
     total_assets_prev: Decimal
-    ytd_year: Optional[int]
+    ytd_year: int | None
     ytd_retirement_contributions: list[RetirementContributionPoint]
 
 
@@ -242,7 +244,7 @@ def _expense_by_subcategory(
             continue
         by_cat[acct.sub_category] += line.debit_amount - line.credit_amount
     return sorted(
-        [ExpenseCategory(label=k, amount=float(v)) for k, v in by_cat.items() if v > _ZERO],
+        [ExpenseCategory(label=k, amount=v) for k, v in by_cat.items() if v > _ZERO],
         key=lambda c: c.amount,
         reverse=True,
     )[:8]
@@ -384,10 +386,10 @@ def _paycheck_flow(
 
 async def compute_dashboard(
     db: AsyncSession,
-    year: Optional[int] = None,
-    period_id: Optional[uuid.UUID] = None,
-    from_period_id: Optional[uuid.UUID] = None,
-    to_period_id: Optional[uuid.UUID] = None,
+    year: int | None = None,
+    period_id: uuid.UUID | None = None,
+    from_period_id: uuid.UUID | None = None,
+    to_period_id: uuid.UUID | None = None,
 ) -> DashboardData:
     accounts_result = await db.scalars(select(Account))
     accounts: dict[int, Account] = {a.account_code: a for a in accounts_result.all()}
@@ -416,7 +418,6 @@ async def compute_dashboard(
     # was never formally closed). Without this, KPI totals like total_assets
     # show just the latest period's net change instead of the running balance.
     all_closed_periods = [p for p in all_periods if p.status == "closed"]
-    all_closed_ids = {p.period_id for p in all_closed_periods}
 
     closed_filter_periods = [p for p in periods if p.status == "closed"]
     filter_closed_ids = {p.period_id for p in closed_filter_periods}
@@ -539,7 +540,7 @@ async def compute_dashboard(
     # (web from/to range or no filter) they default to the most recent closed
     # year, matching the existing YTD-growth pattern on the frontend.
     if year is not None:
-        ytd_year: Optional[int] = year
+        ytd_year: int | None = year
     elif all_closed_periods:
         ytd_year = max(p.period_start.year for p in all_closed_periods)
     else:
@@ -563,7 +564,7 @@ async def compute_dashboard(
         RetirementContributionPoint(
             account_code=code,
             account_name=accounts[code].account_name if code in accounts else str(code),
-            amount=float(ytd_contribs_by_code.get(code, _ZERO)),
+            amount=ytd_contribs_by_code.get(code, _ZERO),
         )
         for code in sorted(_RETIREMENT_CODES)
     ]
@@ -622,13 +623,13 @@ async def compute_dashboard(
         label = p.period_start.strftime("%b %Y")
         period_bars.append(PeriodBar(
             label=label,
-            income=float(p_income),
-            expenses=float(p_expenses),
-            net=float(p_income - p_expenses),
+            income=p_income,
+            expenses=p_expenses,
+            net=p_income - p_expenses,
         ))
         net_worth_series.append(NetWorthPoint(
             label=label,
-            net_worth=float(running_assets - running_liabilities),
+            net_worth=running_assets - running_liabilities,
         ))
 
         per_cat: dict[str, Decimal] = defaultdict(lambda: _ZERO)
@@ -642,7 +643,7 @@ async def compute_dashboard(
                 expense_category_series.append(ExpenseCategorySeriesPoint(
                     period_label=label,
                     category=cat,
-                    amount=float(amt),
+                    amount=amt,
                 ))
 
         for subcat, amt in running_assets_by_subcat.items():
@@ -650,14 +651,14 @@ async def compute_dashboard(
                 asset_series.append(AssetSeriesPoint(
                     period_label=label,
                     sub_category=subcat,
-                    amount=float(amt),
+                    amount=amt,
                 ))
         # Composition reflects the latest filter-scope period; overwritten each iteration.
         asset_composition_snapshot = dict(running_assets_by_subcat)
 
     asset_composition = sorted(
         [
-            AssetCompositionPoint(sub_category=k, amount=float(v))
+            AssetCompositionPoint(sub_category=k, amount=v)
             for k, v in asset_composition_snapshot.items()
             if v > _ZERO
         ],
@@ -707,13 +708,13 @@ async def compute_dashboard(
     period_labels: dict = {p.period_id: p.period_start.strftime("%b %Y") for p in all_closed_periods}
 
     lines_by_entry: dict = defaultdict(list)
-    for line, period_id, entry_id, _is_closing, _source_type in all_rows:
+    for line, _period_id, entry_id, _is_closing, _source_type in all_rows:
         lines_by_entry[entry_id].append(line)
 
     recent_entries: list[RecentEntry] = []
-    for entry, period_start in recent_result.all():
+    for entry, _period_start in recent_result.all():
         entry_lines = lines_by_entry.get(entry.entry_id, [])
-        total_debit = float(sum(ln.debit_amount for ln in entry_lines))
+        total_debit = sum((ln.debit_amount for ln in entry_lines), start=_ZERO)
         recent_entries.append(RecentEntry(
             description=entry.description,
             entry_date=entry.entry_date.strftime("%Y-%m-%d"),

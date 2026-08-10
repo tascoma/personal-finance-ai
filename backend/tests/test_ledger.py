@@ -4,15 +4,11 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.databases import Base
-from app.dependencies import get_current_user, get_db_session
-from app.models.user import User
-from app.main import app
 from app.models.account import Account
 from app.models.journal import JournalEntry, JournalLine
 from app.models.period import Period
@@ -39,25 +35,6 @@ async def session_factory():
     await eng.dispose()
 
 
-@pytest_asyncio.fixture
-async def client(session_factory):
-    async def override_get_db_session():
-        async with session_factory() as session:
-            yield session
-
-    async def _mock_user() -> User:
-        import uuid
-        return User(user_id=uuid.uuid4(), email="test@test.com", hashed_password="", is_active=True)
-
-    app.dependency_overrides[get_db_session] = override_get_db_session
-    app.dependency_overrides[get_current_user] = _mock_user
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-    app.dependency_overrides.clear()
-
-
-@pytest.mark.asyncio
 async def test_ledger_empty_when_no_periods(client: AsyncClient):
     response = await client.get("/api/v1/ledger")
     assert response.status_code == 200
@@ -66,7 +43,6 @@ async def test_ledger_empty_when_no_periods(client: AsyncClient):
     assert data["entries_by_period"] == {}
 
 
-@pytest.mark.asyncio
 async def test_ledger_lists_entries_grouped_by_period(client, session_factory):
     period_id = uuid.uuid4()
     entry_id = uuid.uuid4()
@@ -112,7 +88,6 @@ async def test_ledger_lists_entries_grouped_by_period(client, session_factory):
     assert amounts[100101] == "5200.00"
 
 
-@pytest.mark.asyncio
 async def test_ledger_renders_period_with_no_entries(client, session_factory):
     period_id = uuid.uuid4()
     async with session_factory() as session:

@@ -5,21 +5,19 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import AsyncMock
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agents.classifier import ClassifierOutput, TxnInput, TxnSuggestion
 from app.core.config import settings
 from app.databases import Base
 from app.dependencies import get_current_user, get_db_session
-from app.models.user import User
 from app.main import app
 from app.models.account import Account
 from app.models.document import Document
 from app.models.raw_transaction import RawTransaction
+from app.models.user import User
 from app.services import classify as classify_service
 from app.services import period as period_service
 
@@ -133,7 +131,6 @@ async def _add_staged_txn(
 # ── service-level tests ───────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_classify_updates_suggestion(session_factory, statement_doc, open_period, monkeypatch):
     txn = await _add_staged_txn(session_factory, statement_doc, "GROCERY STORE", Decimal("-45.00"))
     short_id = txn.raw_txn_id.hex[:8]
@@ -153,7 +150,6 @@ async def test_classify_updates_suggestion(session_factory, statement_doc, open_
     assert updated.is_flagged is False
 
 
-@pytest.mark.asyncio
 async def test_classify_flags_low_confidence(session_factory, statement_doc, open_period, monkeypatch):
     txn = await _add_staged_txn(session_factory, statement_doc, "MYSTERY CHARGE", Decimal("-10.00"))
     short_id = txn.raw_txn_id.hex[:8]
@@ -170,7 +166,6 @@ async def test_classify_flags_low_confidence(session_factory, statement_doc, ope
     assert updated.is_flagged is True
 
 
-@pytest.mark.asyncio
 async def test_classify_skips_paystub_txns(session_factory, paystub_doc, open_period, monkeypatch):
     await _add_staged_txn(session_factory, paystub_doc, "REGULAR EARNING", Decimal("3000.00"),
                           confidence=Decimal("1.000"))
@@ -184,7 +179,6 @@ async def test_classify_skips_paystub_txns(session_factory, paystub_doc, open_pe
     mock_run.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_classify_skips_already_classified(session_factory, statement_doc, open_period, monkeypatch):
     await _add_staged_txn(session_factory, statement_doc, "COFFEE", Decimal("-5.00"),
                           confidence=Decimal("0.90"))
@@ -198,7 +192,6 @@ async def test_classify_skips_already_classified(session_factory, statement_doc,
     mock_run.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_classify_skips_duplicates(session_factory, statement_doc, open_period, monkeypatch):
     await _add_staged_txn(session_factory, statement_doc, "DUP CHARGE", Decimal("-5.00"),
                           is_duplicate=True)
@@ -211,7 +204,6 @@ async def test_classify_skips_duplicates(session_factory, statement_doc, open_pe
     assert count == 0
 
 
-@pytest.mark.asyncio
 async def test_classify_ignores_unknown_account_code(session_factory, statement_doc, open_period, monkeypatch):
     txn = await _add_staged_txn(session_factory, statement_doc, "UNKNOWN MERCHANT", Decimal("-20.00"))
     short_id = txn.raw_txn_id.hex[:8]
@@ -244,7 +236,6 @@ async def client(session_factory, monkeypatch):
         AsyncMock(return_value=ClassifierOutput(suggestions=[])),
     )
     async def _mock_user() -> User:
-        import uuid
         return User(user_id=uuid.uuid4(), email="test@test.com", hashed_password="", is_active=True)
 
     app.dependency_overrides[get_db_session] = override_db
@@ -255,7 +246,6 @@ async def client(session_factory, monkeypatch):
     app.dependency_overrides.clear()
 
 
-@pytest.mark.asyncio
 async def test_journal_page_renders(client, journal_period):
     response = await client.get(f"/api/v1/periods/{journal_period.period_id}/journal")
     assert response.status_code == 200
@@ -265,21 +255,18 @@ async def test_journal_page_renders(client, journal_period):
     assert "approved" in data
 
 
-@pytest.mark.asyncio
 async def test_classify_route_returns_count(client, journal_period):
     response = await client.post(f"/api/v1/periods/{journal_period.period_id}/classify")
     assert response.status_code == 200
     assert "count" in response.json()
 
 
-@pytest.mark.asyncio
 async def test_classify_route_returns_zero_when_nothing_to_classify(client, open_period):
     response = await client.post(f"/api/v1/periods/{open_period.period_id}/classify")
     assert response.status_code == 200
     assert response.json() == {"count": 0}
 
 
-@pytest.mark.asyncio
 async def test_approve_reject_route(client, journal_period, session_factory):
     async with session_factory() as session:
         doc = Document(
@@ -314,7 +301,6 @@ async def test_approve_reject_route(client, journal_period, session_factory):
     assert remaining is None
 
 
-@pytest.mark.asyncio
 async def test_update_account_route(client, journal_period, session_factory):
     async with session_factory() as session:
         doc = Document(
@@ -389,7 +375,6 @@ def test_classifier_prompt_is_raw_when_the_flag_is_off(monkeypatch):
     assert "Zach John" in prompt
 
 
-@pytest.mark.asyncio
 async def test_classify_scrubs_the_prompt_but_stores_the_verbatim_description(
     session_factory, journal_period, monkeypatch
 ):

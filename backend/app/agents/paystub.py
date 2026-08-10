@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel
@@ -17,15 +18,15 @@ SYSTEM_PROMPT = (
 
 class PaystubLine(BaseModel):
     label: str
-    amount: float
+    amount: Decimal
     kind: Literal["earning", "deduction", "tax", "net_pay"]
 
 
 class ExtractedPaystub(BaseModel):
     pay_date: date
     lines: list[PaystubLine]
-    gross_pay: float
-    net_pay: float
+    gross_pay: Decimal
+    net_pay: Decimal
 
 
 class ExtractedPaystubs(BaseModel):

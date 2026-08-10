@@ -5,22 +5,10 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
+import app.models  # noqa: F401 — importing the package registers every table
 from alembic import context
-
 from app.core.config import settings
 from app.databases import Base
-from app.models import (  # noqa: F401 — registers all tables on Base.metadata
-    Account,
-    Document,
-    JournalEntry,
-    JournalLine,
-    Period,
-    RawTransaction,
-    Reconciliation,
-    ReviewQueue,
-    StatedBalance,
-    User,
-)
 
 config = context.config
 

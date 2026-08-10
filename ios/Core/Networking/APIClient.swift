@@ -50,6 +50,16 @@ struct APIClient {
         guard let http2 = resp2 as? HTTPURLResponse else {
             throw APIError.unknown("Bad response")
         }
+        // A 401 that survives a *successful* refresh means the session is
+        // genuinely dead (e.g. the server bumped token_version). Only the
+        // refresh-failure path above used to clear auth, so this case left the
+        // app believing it was signed in: RootView re-evaluates auth at
+        // bootstrap only, so every subsequent pull-to-refresh showed "Session
+        // expired" forever with no route back to the login screen.
+        if http2.statusCode == 401 {
+            await MainActor.run { auth.clear() }
+            throw APIError.unauthorized
+        }
         return try handle(data: data2, http: http2)
     }
 

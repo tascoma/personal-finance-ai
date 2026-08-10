@@ -1,16 +1,16 @@
 import os
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from slowapi import _rate_limit_exceeded_handler
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
@@ -18,15 +18,35 @@ from app.core.logging import configure_logging, request_id_ctx
 from app.core.ratelimit import limiter
 from app.routes import (
     accounts as api_accounts,
+)
+from app.routes import (
     auth as api_auth,
+)
+from app.routes import (
     dashboard as api_dashboard,
+)
+from app.routes import (
     documents as api_documents,
+)
+from app.routes import (
     journal as api_journal,
+)
+from app.routes import (
     ledger as api_ledger,
+)
+from app.routes import (
     periods as api_periods,
+)
+from app.routes import (
     reconciliation as api_reconciliation,
+)
+from app.routes import (
     search as api_search,
+)
+from app.routes import (
     statements as api_statements,
+)
+from app.routes import (
     transactions as api_transactions,
 )
 

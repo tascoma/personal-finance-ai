@@ -3,19 +3,13 @@
 from datetime import date
 from decimal import Decimal
 
-import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.databases import Base
-from app.dependencies import get_current_user, get_db_session
-from app.models.user import User
-from app.main import app
 from app.models.account import Account
 from app.models.document import Document
 from app.models.journal import JournalEntry, JournalLine
-from app.models.period import Period
 from app.models.raw_transaction import RawTransaction
 from app.models.stated_balance import StatedBalance
 from app.services import journal as journal_service
@@ -111,7 +105,6 @@ async def _seed_period_with_entries(session_factory, year: int, month: int):
 # ── service-level tests ─────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_balance_sheet_after_paystub_and_expense(session_factory):
     period = await _seed_period_with_entries(session_factory, 2026, 1)
 
@@ -127,7 +120,6 @@ async def test_balance_sheet_after_paystub_and_expense(session_factory):
     assert cash_section.subtotal == Decimal("2850.00")
 
 
-@pytest.mark.asyncio
 async def test_income_statement_net_income(session_factory):
     period = await _seed_period_with_entries(session_factory, 2026, 1)
 
@@ -145,7 +137,6 @@ async def test_income_statement_net_income(session_factory):
     assert inc.comprehensive_income == Decimal("2850.00")
 
 
-@pytest.mark.asyncio
 async def test_income_statement_separates_oci(session_factory):
     period = await _seed_period_with_entries(session_factory, 2026, 1)
 
@@ -186,7 +177,6 @@ async def test_income_statement_separates_oci(session_factory):
     assert inc.comprehensive_income == Decimal("3350.00")
 
 
-@pytest.mark.asyncio
 async def test_balance_sheet_pivot_off_balance_sheet_section(session_factory):
     p1 = await _seed_period_with_entries(session_factory, 2026, 1)
     p2 = await _seed_period_with_entries(session_factory, 2026, 2)
@@ -217,7 +207,6 @@ async def test_balance_sheet_pivot_off_balance_sheet_section(session_factory):
     assert all(b not in (Decimal("16867.36"), Decimal("18114.65")) for b in pivot.total_assets)
 
 
-@pytest.mark.asyncio
 async def test_balance_sheet_pivot_includes_open_seed_period(session_factory):
     """A still-open earlier period with seed/opening-balance entries should
     contribute to cumulative columns for later closed periods."""
@@ -256,7 +245,6 @@ async def test_balance_sheet_pivot_includes_open_seed_period(session_factory):
     assert checking_row.balances == [Decimal("5000.00"), Decimal("7850.00")]
 
 
-@pytest.mark.asyncio
 async def test_cashflow_classifies_operating(session_factory):
     period = await _seed_period_with_entries(session_factory, 2026, 1)
 
@@ -272,7 +260,6 @@ async def test_cashflow_classifies_operating(session_factory):
     assert cf.net_change_in_cash == Decimal("2850.00")
 
 
-@pytest.mark.asyncio
 async def test_aggregate_combines_periods(session_factory):
     p1 = await _seed_period_with_entries(session_factory, 2026, 1)
     p2 = await _seed_period_with_entries(session_factory, 2026, 2)
@@ -294,25 +281,6 @@ async def test_aggregate_combines_periods(session_factory):
 # ── HTTP route tests ────────────────────────────────────────────────────────
 
 
-@pytest_asyncio.fixture
-async def client(session_factory):
-    async def override_db():
-        async with session_factory() as session:
-            yield session
-
-    async def _mock_user() -> User:
-        import uuid
-        return User(user_id=uuid.uuid4(), email="test@test.com", hashed_password="", is_active=True)
-
-    app.dependency_overrides[get_db_session] = override_db
-    app.dependency_overrides[get_current_user] = _mock_user
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=True) as c:
-        yield c
-    app.dependency_overrides.clear()
-
-
-@pytest.mark.asyncio
 async def test_balance_sheet_endpoint_renders_empty(client):
     response = await client.get("/api/v1/statements/balance-sheet")
     assert response.status_code == 200
@@ -324,7 +292,6 @@ async def test_balance_sheet_endpoint_renders_empty(client):
     assert "total_off_balance_sheet" in data
 
 
-@pytest.mark.asyncio
 async def test_income_statement_endpoint_renders_with_data(client, session_factory):
     await _seed_period_with_entries(session_factory, 2026, 1)
     response = await client.get("/api/v1/statements/income")
@@ -338,7 +305,6 @@ async def test_income_statement_endpoint_renders_with_data(client, session_facto
     assert data["comprehensive_income"] == "2850.00"
 
 
-@pytest.mark.asyncio
 async def test_income_statement_period_filter(client, session_factory):
     period = await _seed_period_with_entries(session_factory, 2026, 1)
     response = await client.get(f"/api/v1/statements/income?period_id={period.period_id}")
@@ -347,7 +313,6 @@ async def test_income_statement_period_filter(client, session_factory):
     assert data["total_income"] == "3000.00"
 
 
-@pytest.mark.asyncio
 async def test_income_statement_aggregate_when_no_period_filter(client, session_factory):
     await _seed_period_with_entries(session_factory, 2026, 1)
     response = await client.get("/api/v1/statements/income")
@@ -356,7 +321,6 @@ async def test_income_statement_aggregate_when_no_period_filter(client, session_
     assert data["range_label"] == "All Periods"
 
 
-@pytest.mark.asyncio
 async def test_cashflow_endpoint_renders(client, session_factory):
     await _seed_period_with_entries(session_factory, 2026, 1)
     response = await client.get("/api/v1/statements/cashflow")

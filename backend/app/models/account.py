@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import Boolean, CheckConstraint, DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -25,7 +24,7 @@ class Account(Base):
     account_type: Mapped[str] = mapped_column(String, nullable=False)
     sub_category: Mapped[str] = mapped_column(String, nullable=False)
     normal_balance: Mapped[str] = mapped_column(String, nullable=False)
-    paystub_mapping: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    paystub_mapping: Mapped[str | None] = mapped_column(String, nullable=True)
     is_memo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
