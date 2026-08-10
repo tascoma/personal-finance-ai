@@ -968,5 +968,91 @@ async def test_paycheck_flow_empty_without_activity(client: AsyncClient):
     flow = (await client.get("/api/v1/dashboard")).json()["paycheck_flow"]
     assert flow == {
         "earnings": [], "deductions": [], "employer": [],
-        "take_home": "0", "other_income": [], "drawdowns": [], "uses": [],
+        "take_home": "0.00", "other_income": [], "drawdowns": [], "uses": [],
     }
+
+
+@pytest_asyncio.fixture
+async def period_with_round_amounts(session_factory):
+    """Seed amounts that expose the money-string format on the wire.
+
+    Values ending in a zero cent (0.10, 0.20) render as "0.10" from a Decimal
+    but "0.1" from a float, which is how the two formats become visible.
+    """
+    async with session_factory() as session:
+        period = Period(
+            period_start=date(2026, 3, 1),
+            period_end=date(2026, 3, 31),
+            status="closed",
+            closed_at=datetime(2026, 4, 1),
+        )
+        session.add(period)
+        session.add_all([
+            Account(account_code=100101, account_name="Checking", account_type="Asset",
+                    sub_category="Cash", normal_balance="debit", is_memo=False, is_active=True),
+            Account(account_code=600101, account_name="Groceries", account_type="Expense",
+                    sub_category="Food", normal_balance="debit", is_memo=False, is_active=True),
+        ])
+        await session.flush()
+
+        for amount in (Decimal("0.10"), Decimal("0.20")):
+            entry = JournalEntry(
+                entry_id=uuid.uuid4(),
+                period_id=period.period_id,
+                entry_date=date(2026, 3, 10),
+                description=f"Snack {amount}",
+                source_type="manual",
+            )
+            session.add(entry)
+            await session.flush()
+            session.add_all([
+                JournalLine(line_id=uuid.uuid4(), entry_id=entry.entry_id,
+                            account_code=600101, debit_amount=amount, credit_amount=Decimal("0")),
+                JournalLine(line_id=uuid.uuid4(), entry_id=entry.entry_id,
+                            account_code=100101, debit_amount=Decimal("0"), credit_amount=amount),
+            ])
+        await session.commit()
+
+        return period.period_id
+
+
+async def test_dashboard_money_strings_all_have_two_decimal_places(
+    client: AsyncClient, period_with_round_amounts
+):
+    """Every monetary string in the payload must be a 2-dp decimal string.
+
+    These fields aggregate Numeric(15, 2) columns and the route serializes them
+    with str(). When a chart dataclass field was typed `float`, str() went
+    through the float repr instead: the same response carried "3000.00" from
+    the Decimal-typed money_flow buckets and "3000.0" from the float-typed
+    expense categories — two money formats in one document.
+
+    Walk the whole response rather than naming fields, so a field added as
+    float later is caught too.
+    """
+    response = await client.get("/api/v1/dashboard")
+    assert response.status_code == 200
+
+    money_keys = {
+        "amount", "net", "income", "expenses", "net_worth", "total_debit",
+        "take_home", "total_income", "total_expenses", "net_income",
+        "total_assets", "total_liabilities", "beginning_cash", "ending_cash",
+    }
+    offenders: list[str] = []
+
+    def walk(node, path: str, key: str | None = None) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                walk(v, f"{path}.{k}", k)
+        elif isinstance(node, list):
+            for i, v in enumerate(node):
+                walk(v, f"{path}[{i}]", key)
+        elif isinstance(node, float):
+            offenders.append(f"{path} = {node!r} (float; money must serialize as str)")
+        elif isinstance(node, str) and key in money_keys:
+            _, dot, frac = node.partition(".")
+            if not dot or len(frac) != 2:
+                offenders.append(f"{path} = {node!r} (expected 2 decimal places)")
+
+    walk(response.json(), "$")
+    assert not offenders, "inconsistent money serialization:\n" + "\n".join(offenders)

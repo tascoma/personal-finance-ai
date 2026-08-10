@@ -9,6 +9,12 @@ unset, or if `h2` isn't installed, `notify_user()` is a no-op. That lets the
 backend ship without paid Apple Developer credentials; operators wire APNs by
 setting the env vars and running `uv add 'httpx[http2]'` when they're ready.
 
+NOTE: `h2` is deliberately not in the lockfile today, so this module is inert
+in every deployed environment — `_has_http2_support()` returns False and
+`notify_user` returns 0 before touching the database. Adding `h2` is what turns
+push delivery on in production; treat it as an explicit rollout step, not a
+routine dependency bump.
+
 Tokens that come back as 410 Unregistered or 400 BadDeviceToken are deleted —
 the device uninstalled the app or revoked permission.
 """
@@ -153,3 +159,30 @@ async def notify_user(
         await db.commit()
 
     return delivered
+
+
+async def notify_user_background(
+    user_id: uuid.UUID,
+    *,
+    title: str,
+    body: str,
+    extra: dict[str, Any] | None = None,
+) -> int:
+    """`notify_user` for use from a FastAPI BackgroundTask.
+
+    Background tasks run *after* the request's dependency teardown, so the
+    session yielded by `get_db_session` is already closed by the time the task
+    executes. Passing that session in would raise on first use. Open a fresh
+    one instead, scoped to the task.
+
+    Exceptions are swallowed: a background push failure must not surface as an
+    unhandled error in the ASGI layer after the response has been sent.
+    """
+    from app.databases import AsyncSessionLocal
+
+    try:
+        async with AsyncSessionLocal() as db:
+            return await notify_user(db, user_id, title=title, body=body, extra=extra)
+    except Exception:
+        logger.exception("Background push to user %s failed", user_id)
+        return 0

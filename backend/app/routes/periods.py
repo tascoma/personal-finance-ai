@@ -150,8 +150,7 @@ async def update_period_status(
     # wait on APNs latency.
     if body.new_status == "pending_close":
         background_tasks.add_task(
-            apns_service.notify_user,
-            db,
+            apns_service.notify_user_background,
             current_user.user_id,
             title="Ready to close",
             body=f"Period {period.period_start:%b %Y} is ready to close.",

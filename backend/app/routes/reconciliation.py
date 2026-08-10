@@ -6,9 +6,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents._base import AgentError
-from app.agents.reconciliation import ReconciliationAnalysis, run_reconciliation_agent
+from app.agents.reconciliation import (
+    AccountGap,
+    ReconciliationAnalysis,
+    run_reconciliation_agent,
+)
 from app.core.config import settings
+from app.core.money import ZERO
 from app.dependencies import get_current_user, get_db_session
+from app.models.journal import JournalEntry, JournalLine
 from app.models.reconciliation import Reconciliation
 from app.schemas.api_responses import (
     AccountAnalysisSchema,
@@ -54,7 +60,9 @@ async def _build_page(
                 account_name=balances.get(row.account_code, {}).get("account_name", ""),
                 is_investment=balances.get(row.account_code, {}).get("is_investment", False),
                 beginning_balance=balances.get(row.account_code, {}).get("beginning_balance", row.computed_balance),
-                period_net_change=balances.get(row.account_code, {}).get("period_net_change", row.computed_balance - row.computed_balance),
+                period_net_change=balances.get(row.account_code, {}).get(
+                    "period_net_change", ZERO
+                ),
                 computed_balance=row.computed_balance,
                 stated_balance=row.stated_balance,
                 gap=row.gap,
@@ -129,22 +137,10 @@ async def analyze_reconciliation(
     period = await period_service.get_period(db, period_id)
     if period is None:
         raise HTTPException(status_code=404, detail="Period not found")
-
-
-    from app.agents.reconciliation import AccountGap
-
     recon_rows = await db.scalars(
         select(Reconciliation).where(Reconciliation.period_id == period_id)
     )
     raw_rows = list(recon_rows.all())
-    gap_rows = [r for r in raw_rows if r.gap != 0 and not (
-        (await recon_service.compute_account_balances(db, period)).get(r.account_code, {}).get("is_investment", False)
-    )]
-
-    from sqlalchemy import select as sel
-
-    from app.models.journal import JournalEntry as JE
-    from app.models.journal import JournalLine as JL
 
     gaps: list[AccountGap] = []
     balances = await recon_service.compute_account_balances(db, period)
@@ -153,10 +149,13 @@ async def analyze_reconciliation(
         if row.gap == 0 or info.get("is_investment", False):
             continue
         recent_entries_result = await db.scalars(
-            sel(JE.description)
-            .join(JL, JL.entry_id == JE.entry_id)
-            .where(JE.period_id == period_id, JL.account_code == row.account_code)
-            .order_by(JE.entry_date.desc())
+            select(JournalEntry.description)
+            .join(JournalLine, JournalLine.entry_id == JournalEntry.entry_id)
+            .where(
+                JournalEntry.period_id == period_id,
+                JournalLine.account_code == row.account_code,
+            )
+            .order_by(JournalEntry.entry_date.desc())
             .limit(5)
         )
         account_name = info.get("account_name", "")

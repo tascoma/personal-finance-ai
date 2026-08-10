@@ -4,6 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.money import money_str
 from app.dependencies import get_current_user, get_db_session
 from app.schemas.api_responses import (
     AssetCompositionPoint,
@@ -29,7 +30,7 @@ router = APIRouter(tags=["dashboard"], dependencies=[Depends(get_current_user)])
 
 
 def _flow_point(bucket: dashboard_service.MoneyFlowBucket) -> MoneyFlowBucketPoint:
-    return MoneyFlowBucketPoint(category=bucket.label, amount=str(bucket.amount))
+    return MoneyFlowBucketPoint(category=bucket.label, amount=money_str(bucket.amount))
 
 
 @router.get("/dashboard", response_model=DashboardResponse)
@@ -50,40 +51,40 @@ async def get_dashboard(
     active_period = await get_current_open_period(db)
 
     return DashboardResponse(
-        total_income=str(data.total_income),
-        total_expenses=str(data.total_expenses),
-        net_income=str(data.net_income),
-        total_assets=str(data.total_assets),
-        total_assets_prev=str(data.total_assets_prev),
-        total_liabilities=str(data.total_liabilities),
-        net_worth=str(data.net_worth),
-        investing_cashflow=str(data.investing_cashflow),
-        salary_income=str(data.salary_income),
-        retirement_contributions=str(data.retirement_contributions),
-        compensation_income=str(data.compensation_income),
-        lifestyle_expenses=str(data.lifestyle_expenses),
-        oci=str(data.oci),
-        liquid_assets=str(data.liquid_assets),
-        liquid_assets_prev=str(data.liquid_assets_prev),
-        tax_advantaged=str(data.tax_advantaged),
-        tax_advantaged_prev=str(data.tax_advantaged_prev),
+        total_income=money_str(data.total_income),
+        total_expenses=money_str(data.total_expenses),
+        net_income=money_str(data.net_income),
+        total_assets=money_str(data.total_assets),
+        total_assets_prev=money_str(data.total_assets_prev),
+        total_liabilities=money_str(data.total_liabilities),
+        net_worth=money_str(data.net_worth),
+        investing_cashflow=money_str(data.investing_cashflow),
+        salary_income=money_str(data.salary_income),
+        retirement_contributions=money_str(data.retirement_contributions),
+        compensation_income=money_str(data.compensation_income),
+        lifestyle_expenses=money_str(data.lifestyle_expenses),
+        oci=money_str(data.oci),
+        liquid_assets=money_str(data.liquid_assets),
+        liquid_assets_prev=money_str(data.liquid_assets_prev),
+        tax_advantaged=money_str(data.tax_advantaged),
+        tax_advantaged_prev=money_str(data.tax_advantaged_prev),
         period_count=data.period_count,
         has_data=data.has_data,
         period_bars=[
             PeriodBarPoint(
                 period_label=b.label,
-                income=str(b.income),
-                expenses=str(b.expenses),
-                net=str(b.net),
+                income=money_str(b.income),
+                expenses=money_str(b.expenses),
+                net=money_str(b.net),
             )
             for b in data.period_bars
         ],
         net_worth_series=[
-            NetWorthPoint(period_label=p.label, net_worth=str(p.net_worth))
+            NetWorthPoint(period_label=p.label, net_worth=money_str(p.net_worth))
             for p in data.net_worth_series
         ],
         top_expense_categories=[
-            ExpenseCategoryPoint(category=c.label, amount=str(c.amount))
+            ExpenseCategoryPoint(category=c.label, amount=money_str(c.amount))
             for c in data.top_expense_categories
         ],
         money_flow=MoneyFlowResponse(
@@ -95,7 +96,7 @@ async def get_dashboard(
             earnings=[_flow_point(b) for b in data.paycheck_flow.earnings],
             deductions=[_flow_point(b) for b in data.paycheck_flow.deductions],
             employer=[_flow_point(b) for b in data.paycheck_flow.employer],
-            take_home=str(data.paycheck_flow.take_home),
+            take_home=money_str(data.paycheck_flow.take_home),
             other_income=[_flow_point(b) for b in data.paycheck_flow.other_income],
             drawdowns=[_flow_point(b) for b in data.paycheck_flow.drawdowns],
             uses=[_flow_point(b) for b in data.paycheck_flow.uses],
@@ -104,19 +105,19 @@ async def get_dashboard(
             ExpenseCategorySeriesPoint(
                 period_label=p.period_label,
                 category=p.category,
-                amount=str(p.amount),
+                amount=money_str(p.amount),
             )
             for p in data.expense_category_series
         ],
         asset_composition=[
-            AssetCompositionPoint(sub_category=c.sub_category, amount=str(c.amount))
+            AssetCompositionPoint(sub_category=c.sub_category, amount=money_str(c.amount))
             for c in data.asset_composition
         ],
         asset_series=[
             AssetSeriesPoint(
                 period_label=p.period_label,
                 sub_category=p.sub_category,
-                amount=str(p.amount),
+                amount=money_str(p.amount),
             )
             for p in data.asset_series
         ],
@@ -125,7 +126,7 @@ async def get_dashboard(
             RetirementContributionPoint(
                 account_code=c.account_code,
                 account_name=c.account_name,
-                amount=str(c.amount),
+                amount=money_str(c.amount),
             )
             for c in data.ytd_retirement_contributions
         ],
@@ -135,7 +136,7 @@ async def get_dashboard(
                 entry_date=e.entry_date,
                 source_type=e.source_type,
                 period_label=e.period_label,
-                total_debit=str(e.total_debit),
+                total_debit=money_str(e.total_debit),
             )
             for e in data.recent_entries
         ],

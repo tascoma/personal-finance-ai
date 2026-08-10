@@ -210,3 +210,39 @@ async def test_stated_balance_unique(session: AsyncSession):
     session.add(b2)
     with pytest.raises(IntegrityError):
         await session.commit()
+
+
+async def test_every_model_module_is_exported_from_app_models():
+    """Every model class on disk must be re-exported by `app.models`.
+
+    Alembic's autogenerate and `init_db()`'s `create_all` both diff against
+    `Base.metadata`, which is populated purely as an import side effect. A model
+    that exists on disk but is not imported by `app/models/__init__.py` is
+    invisible to both: `create_all` silently skips the table, and the next
+    `alembic revision --autogenerate` emits a `drop_table` for it. That is
+    exactly what happened to `device_tokens`.
+
+    Note this asserts on the package's *exported attributes*, not on
+    `Base.metadata` — importing a module to discover its models would itself
+    register them and make the assertion vacuous.
+    """
+    import importlib
+    import pkgutil
+
+    import app.models
+
+    missing: list[str] = []
+    for mod in pkgutil.iter_modules(app.models.__path__):
+        module = importlib.import_module(f"app.models.{mod.name}")
+        for name, obj in vars(module).items():
+            if not isinstance(getattr(obj, "__tablename__", None), str):
+                continue
+            if getattr(obj, "__module__", "") != module.__name__:
+                continue  # imported into the module, not defined there
+            if getattr(app.models, name, None) is not obj:
+                missing.append(f"{mod.name}.{name}")
+
+    assert not missing, (
+        f"model(s) not exported from app.models: {sorted(missing)} — add to "
+        "app/models/__init__.py so Base.metadata registration is guaranteed"
+    )
