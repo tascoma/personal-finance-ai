@@ -28,8 +28,13 @@ enum KeychainBridge {
         SecItemDelete(query as CFDictionary)
         var add = query
         add[kSecValueData as String] = data
-        // After first unlock so widget/extensions can also read post-boot.
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        // ThisDeviceOnly: excludes these items from encrypted backups, so they
+        // cannot be restored onto another device. The previous value was
+        // AfterFirstUnlock, justified by a comment about widget/extension
+        // sharing — but no kSecAttrAccessGroup is set and the widget ships under
+        // a different bundle id, so it could never read them and the weaker
+        // class bought nothing.
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         SecItemAdd(add as CFDictionary, nil)
     }
 

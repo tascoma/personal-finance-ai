@@ -18,14 +18,14 @@ struct BiometricGateView: View {
                     .font(.title2.weight(.semibold))
                 Text("Unlock with \(biometric.availableType.displayName) to continue.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.appTextSecondary)
                     .multilineTextAlignment(.center)
             }
 
             if let message = biometric.lastErrorMessage {
                 Text(message)
                     .font(.footnote)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.appRed)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
             }

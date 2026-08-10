@@ -65,20 +65,25 @@ struct Forecast {
             }
         }
 
+        // `1...max(monthsRemaining, 0)` builds the range before `where` can
+        // filter it, so monthsRemaining == 0 formed `1...0` and trapped with
+        // "Range requires lowerBound <= upperBound". That is reachable whenever
+        // the newest closed period is December of the target year.
         var futureLabels: [String] = []
-        for k in 1...max(monthsRemaining, 0) where monthsRemaining > 0 {
+        for k in stride(from: 1, through: monthsRemaining, by: 1) {
             let total = lm + k
             let year = ly + (total - 1) / 12
             let month = ((total - 1) % 12) + 1
             futureLabels.append("\(monthAbbreviations[month - 1]) \(year)")
         }
 
-        let trailingFuture: [Double] = (1...max(monthsRemaining, 1))
-            .prefix(monthsRemaining)
-            .map { k in lastNw + Double(k) * avgMonthlyNet }
-        let regressionFuture: [Double] = (1...max(monthsRemaining, 1))
-            .prefix(monthsRemaining)
-            .map { k in intercept + slope * Double(n - 1 + k) }
+        let futureSteps = Array(stride(from: 1, through: monthsRemaining, by: 1))
+        let trailingFuture: [Double] = futureSteps.map { k in
+            lastNw + Double(k) * avgMonthlyNet
+        }
+        let regressionFuture: [Double] = futureSteps.map { k in
+            intercept + slope * Double(n - 1 + k)
+        }
 
         // Build flat point list. We mirror the web by re-labeling historical
         // points with the same period labels; future labels are YYYY-MM.
@@ -88,14 +93,14 @@ struct Forecast {
         }
         // Anchor the trailing projection at the last historical point, then extend
         // through futureLabels so the line is continuous at the boundary.
-        if !histLabels.isEmpty {
-            points.append(Point(label: histLabels.last!, value: lastNw, series: .trailing))
+        if let boundaryLabel = histLabels.last {
+            points.append(Point(label: boundaryLabel, value: lastNw, series: .trailing))
             for (i, label) in futureLabels.enumerated() {
                 points.append(Point(label: label, value: trailingFuture[i], series: .trailing))
             }
         }
-        if n >= 2 {
-            points.append(Point(label: histLabels.last!, value: intercept + slope * Double(n - 1), series: .regression))
+        if n >= 2, let boundaryLabel = histLabels.last {
+            points.append(Point(label: boundaryLabel, value: intercept + slope * Double(n - 1), series: .regression))
             for (i, label) in futureLabels.enumerated() {
                 points.append(Point(label: label, value: regressionFuture[i], series: .regression))
             }

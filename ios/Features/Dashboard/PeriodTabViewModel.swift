@@ -18,12 +18,7 @@ final class PeriodTabViewModel {
         }
     }
 
-    enum State: Equatable {
-        case idle
-        case loading
-        case loaded(Snapshot)
-        case error(String)
-    }
+    typealias State = LoadState<Snapshot>
 
     var state: State = .idle
     var selectedPeriodId: UUID?

@@ -4,7 +4,6 @@ struct RootView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.scenePhase) private var scenePhase
     @State private var phase: Phase = .biometric
-    @State private var didStart = false
 
     enum Phase: Equatable {
         case biometric          // Showing BiometricGateView (only if biometric enabled)
@@ -35,13 +34,9 @@ struct RootView: View {
                 }
             }
         }
-        .onAppear {
-            if !didStart {
-                didStart = true
-                // If biometric isn't enabled, the .biometric phase view's .task
-                // will fire bootstrap immediately. Otherwise we wait for unlock.
-            }
-        }
+        // Bootstrap is driven by the phase views: when biometric is disabled the
+        // .biometric phase's .task fires it immediately, otherwise it waits for
+        // unlock. Nothing to do on appear.
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .background, .inactive:
@@ -80,7 +75,7 @@ private struct BootstrappingView: View {
             ProgressView()
             if showSlowHint {
                 Text("Waking server…")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.appTextSecondary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

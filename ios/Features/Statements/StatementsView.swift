@@ -82,7 +82,7 @@ struct StatementsView: View {
             if let label = currentRangeLabel {
                 Text(label)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.appTextSecondary)
             }
         }
         .padding(.horizontal)
@@ -135,25 +135,25 @@ struct StatementsView: View {
 
     @ViewBuilder
     private func statePane<T: Equatable, Content: View>(
-        _ state: StatementsViewModel.LoadState<T>,
+        _ state: LoadState<T>,
         @ViewBuilder content: (T) -> Content
     ) -> some View {
         switch state {
         case .idle, .loading:
             VStack(spacing: 12) {
                 ProgressView()
-                Text("Loading…").font(.footnote).foregroundStyle(.secondary)
+                Text("Loading…").font(.footnote).foregroundStyle(Color.appTextSecondary)
             }
             .frame(maxWidth: .infinity, minHeight: 200)
         case .error(let message):
             VStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle")
                     .font(.title)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.appRed)
                 Text(message)
                     .font(.callout)
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.appTextSecondary)
                 Button("Try again") {
                     Task { await vm.refresh() }
                 }
