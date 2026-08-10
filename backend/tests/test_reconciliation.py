@@ -121,7 +121,6 @@ async def _set_stated_balance(factory, period_id: uuid.UUID, account_code: int, 
 # ── service tests — balance computation ──────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_beginning_balance_debit_account(session_factory):
     """Prior-period lines aggregate correctly for a debit-normal account."""
     prior = await _make_period(session_factory, 2026, 3)
@@ -149,7 +148,6 @@ async def test_beginning_balance_debit_account(session_factory):
     assert result[100101]["computed_balance"] == Decimal("800")
 
 
-@pytest.mark.asyncio
 async def test_net_change_current_period(session_factory):
     """Current-period lines are counted as net change, not beginning."""
     prior = await _make_period(session_factory, 2026, 3)
@@ -176,7 +174,6 @@ async def test_net_change_current_period(session_factory):
     assert result[100101]["computed_balance"] == Decimal("1100")
 
 
-@pytest.mark.asyncio
 async def test_liability_credit_normal_balance(session_factory):
     """Credit-normal account: balance = credit_sum - debit_sum."""
     prior = await _make_period(session_factory, 2026, 3)
@@ -201,7 +198,6 @@ async def test_liability_credit_normal_balance(session_factory):
     assert result[200101]["beginning_balance"] == Decimal("400")  # credit - debit = 500-100
 
 
-@pytest.mark.asyncio
 async def test_first_period_beginning_balance_is_zero(session_factory):
     """With no prior periods, beginning balance is zero."""
     current = await _make_period(session_factory, 2026, 4)
@@ -214,7 +210,6 @@ async def test_first_period_beginning_balance_is_zero(session_factory):
     assert result[100101]["beginning_balance"] == _ZERO
 
 
-@pytest.mark.asyncio
 async def test_is_investment_flag(session_factory):
     """Investment account sub_category sets is_investment=True."""
     current = await _make_period(session_factory, 2026, 4)
@@ -229,7 +224,6 @@ async def test_is_investment_flag(session_factory):
     assert result[110101]["is_investment"] is True
 
 
-@pytest.mark.asyncio
 async def test_no_stated_balances_returns_empty(session_factory):
     """compute_account_balances returns {} when no stated balances exist."""
     current = await _make_period(session_factory, 2026, 4)
@@ -244,7 +238,6 @@ async def test_no_stated_balances_returns_empty(session_factory):
 # ── service tests — run_reconciliation ───────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_reconciled_status_when_gap_zero(session_factory):
     """When computed == stated, status is reconciled and gap is 0."""
     current = await _make_period(session_factory, 2026, 4)
@@ -262,7 +255,6 @@ async def test_reconciled_status_when_gap_zero(session_factory):
     assert rows[0].gap == _ZERO
 
 
-@pytest.mark.asyncio
 async def test_pending_status_when_gap_nonzero(session_factory):
     """When computed != stated, status is pending and gap reflects the difference."""
     current = await _make_period(session_factory, 2026, 4)
@@ -279,7 +271,6 @@ async def test_pending_status_when_gap_nonzero(session_factory):
     assert rows[0].gap == Decimal("200")   # stated - computed = 1200 - 1000
 
 
-@pytest.mark.asyncio
 async def test_run_idempotent(session_factory):
     """Running reconciliation twice produces only one row per account."""
     current = await _make_period(session_factory, 2026, 4)
@@ -298,7 +289,6 @@ async def test_run_idempotent(session_factory):
     assert len(rows) == 1
 
 
-@pytest.mark.asyncio
 async def test_error_on_wrong_status(session_factory):
     """Period must be pending_close; open period raises ReconciliationError."""
     open_p = await _make_period(session_factory, 2026, 4, target_status="open")
@@ -309,7 +299,6 @@ async def test_error_on_wrong_status(session_factory):
             await recon_service.run_reconciliation(s, open_p.period_id)
 
 
-@pytest.mark.asyncio
 async def test_error_no_stated_balances(session_factory):
     """No stated balances raises ReconciliationError."""
     current = await _make_period(session_factory, 2026, 4)
@@ -322,7 +311,6 @@ async def test_error_no_stated_balances(session_factory):
 # ── service tests — unrealized G/L entry ─────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_create_unrealized_gl_entry_market_gain(session_factory):
     """Positive gap (market gained): Debit investment, Credit 410103."""
     current = await _make_period(session_factory, 2026, 4)
@@ -348,7 +336,6 @@ async def test_create_unrealized_gl_entry_market_gain(session_factory):
     assert by_account[410103].debit_amount == _ZERO
 
 
-@pytest.mark.asyncio
 async def test_create_unrealized_gl_entry_market_loss(session_factory):
     """Negative gap (market lost): Debit 410103, Credit investment."""
     current = await _make_period(session_factory, 2026, 4)
@@ -368,7 +355,6 @@ async def test_create_unrealized_gl_entry_market_loss(session_factory):
     assert by_account[110101].debit_amount == _ZERO
 
 
-@pytest.mark.asyncio
 async def test_unrealized_gl_closes_gap(session_factory):
     """After posting G/L entry, re-running reconciliation closes the gap."""
     current = await _make_period(session_factory, 2026, 4)
@@ -394,7 +380,6 @@ async def test_unrealized_gl_closes_gap(session_factory):
     assert rows[0].gap == _ZERO
 
 
-@pytest.mark.asyncio
 async def test_unrealized_gl_error_non_investment_account(session_factory):
     """Posting G/L for a non-investment account raises ReconciliationError."""
     current = await _make_period(session_factory, 2026, 4)
@@ -406,7 +391,6 @@ async def test_unrealized_gl_error_non_investment_account(session_factory):
             )
 
 
-@pytest.mark.asyncio
 async def test_unrealized_gl_error_zero_gap(session_factory):
     """Zero gap raises ReconciliationError (no entry needed)."""
     current = await _make_period(session_factory, 2026, 4)
@@ -453,7 +437,6 @@ async def client(session_factory, monkeypatch):
     app.dependency_overrides.clear()
 
 
-@pytest.mark.asyncio
 async def test_reconcile_page_renders(client, session_factory):
     period = await _make_period(session_factory, 2026, 4)
     response = await client.get(f"/api/v1/periods/{period.period_id}/reconcile")
@@ -464,7 +447,6 @@ async def test_reconcile_page_renders(client, session_factory):
     assert "ran" in data
 
 
-@pytest.mark.asyncio
 async def test_reconcile_page_empty_before_run(client, session_factory):
     period = await _make_period(session_factory, 2026, 4)
     response = await client.get(f"/api/v1/periods/{period.period_id}/reconcile")
@@ -474,7 +456,6 @@ async def test_reconcile_page_empty_before_run(client, session_factory):
     assert data["details"] == []
 
 
-@pytest.mark.asyncio
 async def test_post_reconcile_creates_rows(client, session_factory):
     period = await _make_period(session_factory, 2026, 4)
     await _set_stated_balance(session_factory, period.period_id, 100101, Decimal("500"))
@@ -489,7 +470,6 @@ async def test_post_reconcile_creates_rows(client, session_factory):
     assert len(rows) == 1
 
 
-@pytest.mark.asyncio
 async def test_post_reconcile_idempotent(client, session_factory):
     period = await _make_period(session_factory, 2026, 4)
     await _set_stated_balance(session_factory, period.period_id, 100101, Decimal("0"))
@@ -504,7 +484,6 @@ async def test_post_reconcile_idempotent(client, session_factory):
     assert len(rows) == 1
 
 
-@pytest.mark.asyncio
 async def test_post_unrealized_creates_journal_entry(client, session_factory):
     period = await _make_period(session_factory, 2026, 4)
     await _set_stated_balance(session_factory, period.period_id, 110101, Decimal("10000"))
@@ -523,7 +502,6 @@ async def test_post_unrealized_creates_journal_entry(client, session_factory):
     assert entries[0].source_type == "adjusting"
 
 
-@pytest.mark.asyncio
 async def test_analyze_renders_analysis(client, session_factory):
     period = await _make_period(session_factory, 2026, 4)
     await _set_stated_balance(session_factory, period.period_id, 100101, Decimal("999"))
@@ -536,7 +514,6 @@ async def test_analyze_renders_analysis(client, session_factory):
     assert "Minor timing difference detected" in data["analysis"]["overall_summary"]
 
 
-@pytest.mark.asyncio
 async def test_analyze_returns_null_analysis_when_no_non_investment_gaps(client, session_factory):
     """If all gaps are in investment accounts, analysis is null (no AI call needed)."""
     period = await _make_period(session_factory, 2026, 4)
@@ -549,7 +526,6 @@ async def test_analyze_returns_null_analysis_when_no_non_investment_gaps(client,
     assert response.json()["analysis"] is None
 
 
-@pytest.mark.asyncio
 async def test_close_period_via_status_route(client, session_factory):
     period = await _make_period(session_factory, 2026, 4)
     response = await client.post(
@@ -566,7 +542,6 @@ async def test_close_period_via_status_route(client, session_factory):
 # ── service tests — compute_temp_account_preview ─────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_compute_temp_preview_returns_accounts(session_factory):
     """Income and expense accounts with period activity appear in the preview."""
     period = await _make_period(session_factory, 2026, 4)
@@ -597,7 +572,6 @@ async def test_compute_temp_preview_returns_accounts(session_factory):
     assert preview.closing_posted is False
 
 
-@pytest.mark.asyncio
 async def test_compute_temp_preview_closing_posted_flag(session_factory):
     """closing_posted is True once an is_closing entry exists for the period."""
     period = await _make_period(session_factory, 2026, 4)
@@ -626,7 +600,6 @@ async def test_compute_temp_preview_closing_posted_flag(session_factory):
     assert preview.closing_posted is True
 
 
-@pytest.mark.asyncio
 async def test_compute_temp_preview_no_activity(session_factory):
     """No income/expense journal lines → both account lists are empty."""
     period = await _make_period(session_factory, 2026, 4)
@@ -644,7 +617,6 @@ async def test_compute_temp_preview_no_activity(session_factory):
 # ── service tests — post_closing_entries ────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_post_closing_entries_profit(session_factory):
     """Income $1000, expense $300 → balanced closing entry; 300103 credited $700."""
     period = await _make_period(session_factory, 2026, 4)
@@ -685,7 +657,6 @@ async def test_post_closing_entries_profit(session_factory):
     assert total_debits == total_credits
 
 
-@pytest.mark.asyncio
 async def test_post_closing_entries_net_loss(session_factory):
     """When expenses exceed income, 300103 is debited for the net loss."""
     period = await _make_period(session_factory, 2026, 4)
@@ -715,7 +686,6 @@ async def test_post_closing_entries_net_loss(session_factory):
     assert total_debits == total_credits
 
 
-@pytest.mark.asyncio
 async def test_post_closing_entries_idempotency(session_factory):
     """Second call raises ReconciliationError about already-posted entries."""
     period = await _make_period(session_factory, 2026, 4)
@@ -732,7 +702,6 @@ async def test_post_closing_entries_idempotency(session_factory):
             await recon_service.post_closing_entries(s, period.period_id)
 
 
-@pytest.mark.asyncio
 async def test_post_closing_entries_wrong_status(session_factory):
     """Period not in pending_close raises ReconciliationError."""
     period = await _make_period(session_factory, 2026, 4, target_status="open")
@@ -746,7 +715,6 @@ async def test_post_closing_entries_wrong_status(session_factory):
             await recon_service.post_closing_entries(s, period.period_id)
 
 
-@pytest.mark.asyncio
 async def test_post_closing_entries_no_activity(session_factory):
     """No income/expense lines raises ReconciliationError."""
     period = await _make_period(session_factory, 2026, 4)
@@ -759,7 +727,6 @@ async def test_post_closing_entries_no_activity(session_factory):
 # ── HTTP route test — post-closing ───────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_post_closing_route_creates_entry(client, session_factory):
     """POST /periods/{id}/reconcile/post-closing creates a closing journal entry."""
     period = await _make_period(session_factory, 2026, 4)
@@ -789,7 +756,6 @@ async def test_post_closing_route_creates_entry(client, session_factory):
 # ── service tests — compute_equity_rollup_preview ────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_compute_equity_rollup_preview_after_closing(session_factory):
     """After posting closing entries, 300103 balance appears in the preview."""
     period = await _make_period(session_factory, 2026, 4)
@@ -808,7 +774,6 @@ async def test_compute_equity_rollup_preview_after_closing(session_factory):
     assert preview.rollup_posted is False
 
 
-@pytest.mark.asyncio
 async def test_compute_equity_rollup_preview_rollup_posted_flag(session_factory):
     """rollup_posted is True once the equity rollup entry exists."""
     period = await _make_period(session_factory, 2026, 4)
@@ -828,7 +793,6 @@ async def test_compute_equity_rollup_preview_rollup_posted_flag(session_factory)
     assert preview.rollup_posted is True
 
 
-@pytest.mark.asyncio
 async def test_compute_equity_rollup_preview_no_closing_yet(session_factory):
     """Before any closing entries, 300103 balance is zero."""
     period = await _make_period(session_factory, 2026, 4)
@@ -844,7 +808,6 @@ async def test_compute_equity_rollup_preview_no_closing_yet(session_factory):
 # ── service tests — post_equity_rollup ───────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_post_equity_rollup_profit(session_factory):
     """Profit: DR 300103, CR 300102 for the net income amount; entry balances."""
     period = await _make_period(session_factory, 2026, 4)
@@ -878,7 +841,6 @@ async def test_post_equity_rollup_profit(session_factory):
     assert total_debits == total_credits
 
 
-@pytest.mark.asyncio
 async def test_post_equity_rollup_net_loss(session_factory):
     """Net loss: DR 300102, CR 300103."""
     period = await _make_period(session_factory, 2026, 4)
@@ -906,7 +868,6 @@ async def test_post_equity_rollup_net_loss(session_factory):
     assert by_account[300103].credit_amount == Decimal("400")
 
 
-@pytest.mark.asyncio
 async def test_post_equity_rollup_idempotency(session_factory):
     """Second call raises ReconciliationError about already-posted rollup."""
     period = await _make_period(session_factory, 2026, 4)
@@ -924,7 +885,6 @@ async def test_post_equity_rollup_idempotency(session_factory):
             await recon_service.post_equity_rollup(s, period.period_id)
 
 
-@pytest.mark.asyncio
 async def test_post_equity_rollup_requires_closing_first(session_factory):
     """Raises if 300103 has no balance (closing entries not yet posted)."""
     period = await _make_period(session_factory, 2026, 4)
@@ -934,7 +894,6 @@ async def test_post_equity_rollup_requires_closing_first(session_factory):
             await recon_service.post_equity_rollup(s, period.period_id)
 
 
-@pytest.mark.asyncio
 async def test_post_equity_rollup_wrong_status(session_factory):
     """Period not in pending_close raises ReconciliationError."""
     period = await _make_period(session_factory, 2026, 4, target_status="open")
@@ -944,7 +903,6 @@ async def test_post_equity_rollup_wrong_status(session_factory):
             await recon_service.post_equity_rollup(s, period.period_id)
 
 
-@pytest.mark.asyncio
 async def test_closing_posted_flag_unaffected_by_equity_rollup(session_factory):
     """closing_posted in temp preview stays True even after equity rollup is posted."""
     period = await _make_period(session_factory, 2026, 4)
@@ -967,7 +925,6 @@ async def test_closing_posted_flag_unaffected_by_equity_rollup(session_factory):
 # ── HTTP route test — post-equity-rollup ─────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_post_equity_rollup_route(client, session_factory):
     """POST /periods/{id}/reconcile/post-equity-rollup creates the rollup entry."""
     period = await _make_period(session_factory, 2026, 4)
@@ -992,7 +949,6 @@ async def test_post_equity_rollup_route(client, session_factory):
 # ── regression: a brand-new account flows through the reports ────────────────
 
 
-@pytest.mark.asyncio
 async def test_new_income_account_aggregates_in_statement_and_closing(session_factory):
     """A freshly added Income account (not pinned anywhere) must aggregate into the
     income statement and get swept into equity by the period close — proving the

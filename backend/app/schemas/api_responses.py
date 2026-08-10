@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from app.schemas.account import AccountRead
 from app.schemas.document import DocumentRead
 from app.schemas.journal import JournalEntryRead, JournalLineRead
-from app.schemas.period import PeriodRead
+from app.schemas.period import PeriodRead, PeriodStatus
 from app.schemas.raw_transaction import RawTransactionRead
 from app.schemas.reconciliation import (
     EquityRollupPreview,
@@ -334,7 +334,7 @@ class ParseResult(BaseModel):
 
 
 class StatusUpdateRequest(BaseModel):
-    new_status: str
+    new_status: PeriodStatus
 
 
 class SourceAccountRequest(BaseModel):

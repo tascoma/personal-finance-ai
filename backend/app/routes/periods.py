@@ -9,8 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents._base import AgentError
-from app.dependencies import get_current_user, get_db_session
+from app.dependencies import get_current_user, get_db_session, get_period_or_404
 from app.models.account import Account
+from app.models.period import Period
 from app.models.raw_transaction import RawTransaction
 from app.models.user import User
 from app.schemas.account import AccountRead
@@ -62,12 +63,9 @@ async def create_period(
 @router.get("/periods/{period_id}", response_model=PeriodDetailResponse)
 async def get_period_detail(
     period_id: uuid.UUID,
+    period: Period = Depends(get_period_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> PeriodDetailResponse:
-    period = await period_service.get_period(db, period_id)
-    if period is None:
-        raise HTTPException(status_code=404, detail="Period not found")
-
     documents = await document_service.list_documents(db, period_id)
 
     accounts_result = await db.scalars(

@@ -4,16 +4,13 @@ from decimal import Decimal
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.databases import Base
-from app.dependencies import get_current_user, get_db_session
-from app.main import app
 from app.models.account import Account
 from app.models.stated_balance import StatedBalance
-from app.models.user import User
 from app.services import period as period_service
 from app.services import stated_balance as stated_balance_service
 
@@ -73,26 +70,6 @@ async def session_factory():
 
 
 @pytest_asyncio.fixture
-async def client(session_factory):
-    async def override_get_db_session():
-        async with session_factory() as session:
-            yield session
-
-    async def _mock_user() -> User:
-        import uuid
-        return User(user_id=uuid.uuid4(), email="test@test.com", hashed_password="", is_active=True)
-
-    app.dependency_overrides[get_db_session] = override_get_db_session
-    app.dependency_overrides[get_current_user] = _mock_user
-    transport = ASGITransport(app=app)
-    async with AsyncClient(
-        transport=transport, base_url="http://test", follow_redirects=True
-    ) as c:
-        yield c
-    app.dependency_overrides.clear()
-
-
-@pytest_asyncio.fixture
 async def open_period(session_factory):
     async with session_factory() as session:
         period = await period_service.create_period(session, 2026, 4)
@@ -102,7 +79,6 @@ async def open_period(session_factory):
 # ── Service-level tests ──────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_list_balance_accounts_filters_to_assets_and_liabilities(
     session_factory,
 ):
@@ -113,7 +89,6 @@ async def test_list_balance_accounts_filters_to_assets_and_liabilities(
     assert codes == {100101, 200101, 112102}
 
 
-@pytest.mark.asyncio
 async def test_upsert_creates_balance(session_factory, open_period):
     async with session_factory() as session:
         balance = await stated_balance_service.upsert_balance(
@@ -129,7 +104,6 @@ async def test_upsert_creates_balance(session_factory, open_period):
         assert len(list(rows)) == 1
 
 
-@pytest.mark.asyncio
 async def test_upsert_updates_existing_balance(session_factory, open_period):
     async with session_factory() as session:
         await stated_balance_service.upsert_balance(
@@ -151,7 +125,6 @@ async def test_upsert_updates_existing_balance(session_factory, open_period):
     assert rows[0].stated_balance == Decimal("250.00")
 
 
-@pytest.mark.asyncio
 async def test_upsert_allowed_on_pending_close_period(session_factory, open_period):
     async with session_factory() as session:
         await period_service.update_status(
@@ -171,7 +144,6 @@ async def test_upsert_allowed_on_pending_close_period(session_factory, open_peri
     assert balance.stated_balance == Decimal("1.00")
 
 
-@pytest.mark.asyncio
 async def test_upsert_blocked_on_closed_period(session_factory, open_period):
     async with session_factory() as session:
         await period_service.update_status(
@@ -197,7 +169,6 @@ async def test_upsert_blocked_on_closed_period(session_factory, open_period):
 # ── HTTP route tests ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_post_balances_json(client: AsyncClient, session_factory, open_period):
     response = await client.post(
         f"/api/v1/periods/{open_period.period_id}/balances",
@@ -215,7 +186,6 @@ async def test_post_balances_json(client: AsyncClient, session_factory, open_per
     assert by_code == {100101: Decimal("999.99")}  # 400101 ignored (Income)
 
 
-@pytest.mark.asyncio
 async def test_period_detail_includes_stated_balances(
     client: AsyncClient, session_factory, open_period
 ):
@@ -230,7 +200,6 @@ async def test_period_detail_includes_stated_balances(
     assert data["stated_balances"].get("100101") == "777.77"
 
 
-@pytest.mark.asyncio
 async def test_balance_invalid_amount_returns_400(
     client: AsyncClient, open_period
 ):

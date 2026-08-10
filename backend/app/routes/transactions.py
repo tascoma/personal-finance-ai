@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db_session
+from app.dependencies import get_current_user, get_db_session, get_period_or_404
 from app.models.account import Account
+from app.models.period import Period
 from app.models.raw_transaction import RawTransaction
 from app.models.review_queue import ReviewQueue
 from app.schemas.api_responses import (
@@ -19,7 +20,6 @@ from app.schemas.api_responses import (
 )
 from app.schemas.raw_transaction import RawTransactionRead
 from app.services import document as document_service
-from app.services import period as period_service
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +49,9 @@ async def list_transactions(
 async def add_manual_transactions(
     period_id: uuid.UUID,
     body: ManualTransactionBatch,
+    period: Period = Depends(get_period_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> list[RawTransactionRead]:
-    period = await period_service.get_period(db, period_id)
-    if period is None:
-        raise HTTPException(status_code=404, detail="Period not found")
     if period.status not in ("open", "pending_close"):
         raise HTTPException(status_code=400, detail="Period is not open for new transactions")
 

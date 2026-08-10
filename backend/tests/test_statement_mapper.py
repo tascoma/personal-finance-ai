@@ -173,7 +173,6 @@ def stub_schema_mapper(monkeypatch, **fields):
     return seen
 
 
-@pytest.mark.asyncio
 async def test_known_format_never_calls_the_agent(monkeypatch):
     async def explode(prompt):  # pragma: no cover - must not run
         raise AssertionError("the deterministic tier should have resolved this")
@@ -184,7 +183,6 @@ async def test_known_format_never_calls_the_agent(monkeypatch):
     assert txns[0].amount == Decimal("2541.90")
 
 
-@pytest.mark.asyncio
 async def test_agent_resolves_an_unknown_layout(monkeypatch):
     stub_schema_mapper(
         monkeypatch,
@@ -202,7 +200,6 @@ async def test_agent_resolves_an_unknown_layout(monkeypatch):
     assert txns[1].amount == Decimal("1200.00")
 
 
-@pytest.mark.asyncio
 async def test_agent_prompt_carries_headers_and_redacted_samples(monkeypatch):
     seen = stub_schema_mapper(
         monkeypatch,
@@ -221,7 +218,6 @@ async def test_agent_prompt_carries_headers_and_redacted_samples(monkeypatch):
     assert "21229022" not in prompt                    # ...but identifiers do not
 
 
-@pytest.mark.asyncio
 async def test_agent_column_that_is_not_in_the_file_is_rejected(monkeypatch):
     # A hallucinated column name must fail loudly rather than mis-map a number.
     stub_schema_mapper(
@@ -235,7 +231,6 @@ async def test_agent_column_that_is_not_in_the_file_is_rejected(monkeypatch):
         await statement_mapper.csv_to_transactions_async(FOREIGN_ROWS)
 
 
-@pytest.mark.asyncio
 async def test_agent_must_return_an_amount_or_a_debit_credit_pair(monkeypatch):
     stub_schema_mapper(
         monkeypatch, date_column="Fecha", description_columns=["Concepto"], debit_column="Cargo"
@@ -244,7 +239,6 @@ async def test_agent_must_return_an_amount_or_a_debit_credit_pair(monkeypatch):
         await statement_mapper.csv_to_transactions_async(FOREIGN_ROWS)
 
 
-@pytest.mark.asyncio
 async def test_agent_cannot_map_an_identifier_column_onto_the_description(monkeypatch):
     stub_schema_mapper(
         monkeypatch,
@@ -407,7 +401,6 @@ def test_xlsx_supports_split_debit_credit_and_status():
     assert txns[1].amount == Decimal("-160.00")
 
 
-@pytest.mark.asyncio
 async def test_xlsx_falls_back_to_the_agent_too(monkeypatch):
     stub_schema_mapper(
         monkeypatch,
@@ -422,7 +415,6 @@ async def test_xlsx_falls_back_to_the_agent_too(monkeypatch):
     assert txns[0].amount == Decimal("-54.20")
 
 
-@pytest.mark.asyncio
 async def test_schema_prompt_is_raw_when_the_flag_is_off(monkeypatch):
     monkeypatch.setattr(settings, "scrub_before_llm", False)
     seen = stub_schema_mapper(

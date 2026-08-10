@@ -20,11 +20,14 @@ matches labels against `Account.paystub_mapping`, and the amounts are the whole
 point of the extraction.
 """
 
+import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 MASK = "••"  # "••" — precedes a preserved last-4
 
@@ -230,6 +233,25 @@ def scrub_description(text: str, *, keep_terms: Sequence[str] = ()) -> str:
     """
     scrubbed, _ = _scrub(text, keep_terms=keep_terms, addresses=False)
     return scrubbed
+
+
+def scrub_descriptions_for_prompt(
+    texts: Sequence[str], *, keep_terms: Sequence[str] = (), context: str = "prompt"
+) -> list[str]:
+    """Scrub a batch of descriptions, honoring the `scrub_before_llm` setting.
+
+    The settings gate was re-implemented at five call sites with three different
+    behaviors when disabled: two logged a warning, two logged nothing, and one
+    silently passed the text through. Route the gate through here so turning the
+    escape hatch off is always visible in the logs.
+    """
+    if not settings.scrub_before_llm:
+        logger.warning(
+            "PII scrubbing disabled (SCRUB_BEFORE_LLM=false); sending raw text to the LLM for %s",
+            context,
+        )
+        return list(texts)
+    return [scrub_description(t, keep_terms=keep_terms) for t in texts]
 
 
 def last4(value: str) -> str:

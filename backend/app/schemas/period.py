@@ -22,7 +22,10 @@ class PeriodRead(BaseModel):
     period_id: uuid.UUID
     period_start: date
     period_end: date
-    status: str
+    # The Literal, not a bare `str`: the TypeScript client already narrows this
+    # field to the same four values, so leaving it untyped here meant the client
+    # asserted a contract the API never enforced.
+    status: PeriodStatus
     closed_at: datetime | None
     created_at: datetime
 

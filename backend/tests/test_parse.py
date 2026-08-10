@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock
 import openpyxl
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -21,13 +21,10 @@ from app.agents.paystub import ExtractedPaystub, ExtractedPaystubs, PaystubLine
 from app.agents.statement import ExtractedStatement, ExtractedTxn
 from app.core.config import settings
 from app.databases import Base
-from app.dependencies import get_current_user, get_db_session
-from app.main import app
 from app.models.account import Account
 from app.models.document import Document
 from app.models.journal import JournalEntry, JournalLine
 from app.models.raw_transaction import RawTransaction
-from app.models.user import User
 from app.services import document as document_service
 from app.services import parse as parse_service
 from app.services import period as period_service
@@ -248,7 +245,6 @@ RAW_STATEMENT_TEXT = (
 # ── service-level tests ──────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_csv_statement_parses_rows(session_factory, csv_document):
     async with session_factory() as session:
         count = await parse_service.parse_document(session, csv_document.document_id)
@@ -299,7 +295,6 @@ async def new_format_csv_document(session_factory, open_period, upload_root):
     return doc
 
 
-@pytest.mark.asyncio
 async def test_new_bank_format_parses_split_debit_credit(
     session_factory, new_format_csv_document
 ):
@@ -321,7 +316,6 @@ async def test_new_bank_format_parses_split_debit_credit(
     assert doc.llm_model is None
 
 
-@pytest.mark.asyncio
 async def test_unknown_layout_falls_back_to_the_schema_mapper(
     session_factory, open_period, upload_root, monkeypatch
 ):
@@ -374,7 +368,6 @@ async def test_unknown_layout_falls_back_to_the_schema_mapper(
     assert parsed.llm_model == settings.anthropic_model
 
 
-@pytest.mark.asyncio
 async def test_xlsx_credit_card_signs_match(session_factory, xlsx_document):
     async with session_factory() as session:
         count = await parse_service.parse_document(session, xlsx_document.document_id)
@@ -388,7 +381,6 @@ async def test_xlsx_credit_card_signs_match(session_factory, xlsx_document):
     assert rows[1].amount == Decimal("17.99")
 
 
-@pytest.mark.asyncio
 async def test_paystub_maps_known_labels_and_flags_unknown(
     session_factory, paystub_document, monkeypatch
 ):
@@ -432,7 +424,6 @@ async def test_paystub_maps_known_labels_and_flags_unknown(
     assert doc.llm_model is not None  # paystub path used the LLM
 
 
-@pytest.mark.asyncio
 async def test_paystub_with_two_periods_extracts_all_lines(
     session_factory, paystub_document, monkeypatch
 ):
@@ -476,7 +467,6 @@ async def test_paystub_with_two_periods_extracts_all_lines(
 # ── PDF statement extraction + scrubbing ─────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_pdf_statement_parses_rows_and_scrubs_the_prompt(
     session_factory, statement_pdf_document, monkeypatch
 ):
@@ -516,7 +506,6 @@ async def test_pdf_statement_parses_rows_and_scrubs_the_prompt(
     assert doc.llm_model is not None
 
 
-@pytest.mark.asyncio
 async def test_chart_of_accounts_names_survive_the_scrub(
     session_factory, statement_pdf_document, monkeypatch
 ):
@@ -537,7 +526,6 @@ async def test_chart_of_accounts_names_survive_the_scrub(
     assert "1234567890" not in prompt
 
 
-@pytest.mark.asyncio
 async def test_scrub_before_llm_false_sends_raw_text(
     session_factory, statement_pdf_document, monkeypatch
 ):
@@ -552,7 +540,6 @@ async def test_scrub_before_llm_false_sends_raw_text(
     assert extractor.await_args.args[0] == RAW_STATEMENT_TEXT
 
 
-@pytest.mark.asyncio
 async def test_paystub_prompt_is_scrubbed(session_factory, paystub_document, monkeypatch):
     monkeypatch.setattr(
         parse_service, "extract_pdf_text", lambda path: "Emp #: 123456789\nREGULAR EARNING 3,000.00\n"
@@ -569,7 +556,6 @@ async def test_paystub_prompt_is_scrubbed(session_factory, paystub_document, mon
     assert "REGULAR EARNING 3,000.00" in prompt
 
 
-@pytest.mark.asyncio
 async def test_account_keep_terms_returns_active_account_names(session_factory):
     async with session_factory() as session:
         terms = await parse_service.account_keep_terms(session)
@@ -577,7 +563,6 @@ async def test_account_keep_terms_returns_active_account_names(session_factory):
     assert "Mastercard" in terms
 
 
-@pytest.mark.asyncio
 async def test_reparse_replaces_prior_rows(session_factory, csv_document):
     async with session_factory() as session:
         await parse_service.parse_document(session, csv_document.document_id)
@@ -590,7 +575,6 @@ async def test_reparse_replaces_prior_rows(session_factory, csv_document):
     assert len(rows) == 3  # not 6
 
 
-@pytest.mark.asyncio
 async def test_duplicate_documents_flagged_on_second_pass(
     session_factory, csv_document, open_period, upload_root
 ):
@@ -626,7 +610,6 @@ async def test_duplicate_documents_flagged_on_second_pass(
     assert all(r.is_duplicate for r in dup_rows)
 
 
-@pytest.mark.asyncio
 async def test_parse_refuses_unknown_doc_type(
     session_factory, open_period, upload_root
 ):
@@ -657,7 +640,6 @@ async def test_parse_refuses_unknown_doc_type(
         assert refreshed.parse_status == "failed"
 
 
-@pytest.mark.asyncio
 async def test_parse_blocked_when_period_not_open(
     session_factory, csv_document, open_period
 ):
@@ -671,7 +653,6 @@ async def test_parse_blocked_when_period_not_open(
             await parse_service.parse_document(session, csv_document.document_id)
 
 
-@pytest.mark.asyncio
 async def test_parse_period_continues_past_failures(
     session_factory, csv_document, open_period, upload_root
 ):
@@ -701,27 +682,6 @@ async def test_parse_period_continues_past_failures(
 # ── HTTP route tests ─────────────────────────────────────────────────────────
 
 
-@pytest_asyncio.fixture
-async def client(session_factory):
-    async def override_get_db_session():
-        async with session_factory() as session:
-            yield session
-
-    async def _mock_user() -> User:
-        import uuid
-        return User(user_id=uuid.uuid4(), email="test@test.com", hashed_password="", is_active=True)
-
-    app.dependency_overrides[get_db_session] = override_get_db_session
-    app.dependency_overrides[get_current_user] = _mock_user
-    transport = ASGITransport(app=app)
-    async with AsyncClient(
-        transport=transport, base_url="http://test", follow_redirects=True
-    ) as c:
-        yield c
-    app.dependency_overrides.clear()
-
-
-@pytest.mark.asyncio
 async def test_parse_route_returns_document_with_complete_status(
     client: AsyncClient, csv_document, open_period
 ):
@@ -732,7 +692,6 @@ async def test_parse_route_returns_document_with_complete_status(
     assert response.json()["parse_status"] == "complete"
 
 
-@pytest.mark.asyncio
 async def test_transactions_list_rows(
     client: AsyncClient, csv_document, open_period
 ):
@@ -746,7 +705,6 @@ async def test_transactions_list_rows(
     assert any("DIRECT DEPOSIT" in d for d in descriptions)
 
 
-@pytest.mark.asyncio
 async def test_parse_route_blocked_for_non_open_period(
     client: AsyncClient, csv_document, open_period, session_factory
 ):
@@ -787,7 +745,6 @@ async def mortgage_document(session_factory, open_period, upload_root):
     return doc
 
 
-@pytest.mark.asyncio
 async def test_mortgage_statement_monthly_payment(
     session_factory, mortgage_document, monkeypatch
 ):
@@ -828,7 +785,6 @@ async def test_mortgage_statement_monthly_payment(
     assert doc.llm_model is not None
 
 
-@pytest.mark.asyncio
 async def test_mortgage_escrow_disbursement(
     session_factory, mortgage_document, monkeypatch
 ):
@@ -860,7 +816,6 @@ async def test_mortgage_escrow_disbursement(
     assert by_desc["Home Insurance"].suggested_account_code == 510103
 
 
-@pytest.mark.asyncio
 async def test_mortgage_statement_omits_zero_components(
     session_factory, mortgage_document, monkeypatch
 ):
@@ -889,7 +844,6 @@ async def test_mortgage_statement_omits_zero_components(
     assert descriptions == {"Mortgage Principal", "Mortgage Interest"}
 
 
-@pytest.mark.asyncio
 async def test_mortgage_must_be_pdf(
     session_factory, open_period, upload_root, monkeypatch
 ):
@@ -957,7 +911,6 @@ async def opening_balances_document(session_factory, open_period, upload_root):
     return doc
 
 
-@pytest.mark.asyncio
 async def test_opening_balances_creates_balanced_journal_entry(
     session_factory, opening_balances_document
 ):
@@ -998,7 +951,6 @@ async def test_opening_balances_creates_balanced_journal_entry(
     assert total_debits == total_credits
 
 
-@pytest.mark.asyncio
 async def test_opening_balances_rejects_wrong_sign(
     session_factory, open_period, upload_root
 ):
@@ -1025,7 +977,6 @@ async def test_opening_balances_rejects_wrong_sign(
             await parse_service.parse_document(session, doc.document_id)
 
 
-@pytest.mark.asyncio
 async def test_opening_balances_skips_zero_rows(
     session_factory, open_period, upload_root
 ):

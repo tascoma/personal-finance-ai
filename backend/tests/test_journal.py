@@ -11,18 +11,14 @@ from decimal import Decimal
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.databases import Base
-from app.dependencies import get_current_user, get_db_session
-from app.main import app
 from app.models.account import Account
 from app.models.document import Document
 from app.models.journal import JournalEntry, JournalLine
 from app.models.raw_transaction import RawTransaction
-from app.models.user import User
 from app.services import journal as journal_service
 from app.services import period as period_service
 from app.services.journal import JournalError
@@ -123,7 +119,6 @@ async def _make_txn(
 # ── service-level tests ───────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_post_statement_outflow_debits_category(session_factory, open_period):
     """Expense (amount < 0): debit category, credit source."""
     doc = await _make_doc(session_factory, open_period.period_id, source_code=100101)
@@ -146,7 +141,6 @@ async def test_post_statement_outflow_debits_category(session_factory, open_peri
     assert by_account[100101].debit_amount == Decimal("0")
 
 
-@pytest.mark.asyncio
 async def test_post_statement_inflow_debits_source(session_factory, open_period):
     """Income (amount > 0): debit source, credit category."""
     doc = await _make_doc(session_factory, open_period.period_id, source_code=100101)
@@ -163,7 +157,6 @@ async def test_post_statement_inflow_debits_source(session_factory, open_period)
     assert by_account[400101].credit_amount == Decimal("2000.00")  # Income credit
 
 
-@pytest.mark.asyncio
 async def test_post_cc_charge_credits_liability(session_factory, open_period):
     """CC charge (Liability source, amount < 0): debit expense, credit liability."""
     doc = await _make_doc(session_factory, open_period.period_id,
@@ -181,7 +174,6 @@ async def test_post_cc_charge_credits_liability(session_factory, open_period):
     assert by_account[200101].credit_amount == Decimal("30.00")  # Mastercard credit
 
 
-@pytest.mark.asyncio
 async def test_post_paystub_balanced_entry(session_factory, open_period):
     """Paystub: earning (+) credits income; tax (-) debits expense; net debits checking."""
     doc = await _make_doc(session_factory, open_period.period_id,
@@ -212,7 +204,6 @@ async def test_post_paystub_balanced_entry(session_factory, open_period):
     assert by_account[100101].debit_amount == Decimal("3700.00")  # net pay
 
 
-@pytest.mark.asyncio
 async def test_post_mortgage_single_balanced_entry(session_factory, open_period):
     """Mortgage statement: all components post as ONE balanced entry.
 
@@ -265,7 +256,6 @@ async def test_post_mortgage_single_balanced_entry(session_factory, open_period)
     assert total_debits == total_credits == Decimal("2307.56")
 
 
-@pytest.mark.asyncio
 async def test_post_paystub_no_source_skipped(session_factory, open_period):
     """Paystub with no source_account_code is skipped — no entry created."""
     doc = await _make_doc(session_factory, open_period.period_id,
@@ -283,7 +273,6 @@ async def test_post_paystub_no_source_skipped(session_factory, open_period):
     assert count == 0
 
 
-@pytest.mark.asyncio
 async def test_post_skips_staged_txns(session_factory, open_period):
     """Only 'approved' transactions are posted; staged ones are ignored."""
     doc = await _make_doc(session_factory, open_period.period_id, source_code=100101)
@@ -295,7 +284,6 @@ async def test_post_skips_staged_txns(session_factory, open_period):
     assert count == 0
 
 
-@pytest.mark.asyncio
 async def test_post_marks_txn_posted(session_factory, open_period):
     """After posting, raw_txn.status='posted' and journal_entry_id is set."""
     doc = await _make_doc(session_factory, open_period.period_id, source_code=100101)
@@ -311,7 +299,6 @@ async def test_post_marks_txn_posted(session_factory, open_period):
     assert updated.journal_entry_id is not None
 
 
-@pytest.mark.asyncio
 async def test_post_entry_balance_is_verified():
     """_build_paystub_entry raises JournalError when net pay <= 0."""
     checking = Account(account_code=100101, account_name="Checking", account_type="Asset",
@@ -351,25 +338,6 @@ async def test_post_entry_balance_is_verified():
 # ── HTTP route tests ──────────────────────────────────────────────────────────
 
 
-@pytest_asyncio.fixture
-async def client(session_factory):
-    async def override_db():
-        async with session_factory() as session:
-            yield session
-
-    async def _mock_user() -> User:
-        import uuid
-        return User(user_id=uuid.uuid4(), email="test@test.com", hashed_password="", is_active=True)
-
-    app.dependency_overrides[get_db_session] = override_db
-    app.dependency_overrides[get_current_user] = _mock_user
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-    app.dependency_overrides.clear()
-
-
-@pytest.mark.asyncio
 async def test_journal_page_renders(client, journal_period):
     response = await client.get(f"/api/v1/periods/{journal_period.period_id}/journal")
     assert response.status_code == 200
@@ -379,7 +347,6 @@ async def test_journal_page_renders(client, journal_period):
     assert "entries" in data
 
 
-@pytest.mark.asyncio
 async def test_post_route_creates_entries(client, journal_period, session_factory):
     doc = await _make_doc(session_factory, journal_period.period_id, source_code=100101)
     await _make_txn(session_factory, doc, "GROCERIES", Decimal("-40.00"), 520101)
@@ -393,7 +360,6 @@ async def test_post_route_creates_entries(client, journal_period, session_factor
     assert len(entries) == 1
 
 
-@pytest.mark.asyncio
 async def test_post_route_blocked_outside_journal_phase(client, open_period):
     """POST /post is blocked when period is not pending_close."""
     response = await client.post(f"/api/v1/periods/{open_period.period_id}/post")
@@ -401,7 +367,6 @@ async def test_post_route_blocked_outside_journal_phase(client, open_period):
     assert "journal phase" in response.json()["detail"].lower()
 
 
-@pytest.mark.asyncio
 async def test_journal_page_shows_posted_entries(client, journal_period, session_factory):
     doc = await _make_doc(session_factory, journal_period.period_id, source_code=100101)
     await _make_txn(session_factory, doc, "COFFEE", Decimal("-5.00"), 520101)
@@ -417,7 +382,6 @@ async def test_journal_page_shows_posted_entries(client, journal_period, session
 # ── manual journal entry service tests ───────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_create_manual_entry_balanced(session_factory, open_period):
     """A balanced manual entry creates one JournalEntry and matching lines."""
     async with session_factory() as session:
@@ -448,7 +412,6 @@ async def test_create_manual_entry_balanced(session_factory, open_period):
     assert total_debits == total_credits == Decimal("100.00")
 
 
-@pytest.mark.asyncio
 async def test_create_manual_entry_unbalanced_raises(session_factory, open_period):
     async with session_factory() as session:
         with pytest.raises(journal_service.JournalError, match="balance"):
@@ -465,7 +428,6 @@ async def test_create_manual_entry_unbalanced_raises(session_factory, open_perio
             )
 
 
-@pytest.mark.asyncio
 async def test_create_manual_entry_empty_raises(session_factory, open_period):
     async with session_factory() as session:
         with pytest.raises(journal_service.JournalError, match="at least one"):
@@ -479,7 +441,6 @@ async def test_create_manual_entry_empty_raises(session_factory, open_period):
             )
 
 
-@pytest.mark.asyncio
 async def test_delete_manual_entry(session_factory, open_period):
     async with session_factory() as session:
         entry = await journal_service.create_manual_entry(
@@ -505,7 +466,6 @@ async def test_delete_manual_entry(session_factory, open_period):
         assert lines == []
 
 
-@pytest.mark.asyncio
 async def test_delete_non_user_entry_raises(session_factory, open_period):
     """Entries created by 'python' (auto-posted) cannot be deleted."""
     doc = await _make_doc(session_factory, open_period.period_id, source_code=100101)
@@ -524,7 +484,6 @@ async def test_delete_non_user_entry_raises(session_factory, open_period):
 # ── manual journal entry HTTP route tests ────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_create_manual_entry_route(client, open_period, session_factory):
     response = await client.post(
         f"/api/v1/periods/{open_period.period_id}/journal/entries",
@@ -547,7 +506,6 @@ async def test_create_manual_entry_route(client, open_period, session_factory):
     assert entries[0].created_by == "user"
 
 
-@pytest.mark.asyncio
 async def test_create_manual_entry_route_unbalanced(client, open_period):
     response = await client.post(
         f"/api/v1/periods/{open_period.period_id}/journal/entries",
@@ -565,7 +523,6 @@ async def test_create_manual_entry_route_unbalanced(client, open_period):
     assert "balance" in response.json()["detail"].lower()
 
 
-@pytest.mark.asyncio
 async def test_delete_manual_entry_route(client, open_period, session_factory):
     async with session_factory() as session:
         entry = await journal_service.create_manual_entry(
@@ -593,7 +550,6 @@ async def test_delete_manual_entry_route(client, open_period, session_factory):
 # ── unpost_document tests ─────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_unpost_document_resets_transactions(session_factory, open_period):
     """unpost_document sets posted txns back to approved and clears journal_entry_id."""
     doc = await _make_doc(session_factory, open_period.period_id, source_code=100101)
@@ -613,7 +569,6 @@ async def test_unpost_document_resets_transactions(session_factory, open_period)
     assert all(t.journal_entry_id is None for t in txns)
 
 
-@pytest.mark.asyncio
 async def test_unpost_document_deletes_entries_and_lines(session_factory, open_period):
     """unpost_document removes the JournalEntry and JournalLine rows."""
     doc = await _make_doc(session_factory, open_period.period_id, source_code=100101)
@@ -631,7 +586,6 @@ async def test_unpost_document_deletes_entries_and_lines(session_factory, open_p
     assert lines == []
 
 
-@pytest.mark.asyncio
 async def test_unpost_document_noop_when_nothing_posted(session_factory, open_period):
     """unpost_document returns 0 and leaves the DB unchanged when nothing is posted."""
     doc = await _make_doc(session_factory, open_period.period_id, source_code=100101)
@@ -643,7 +597,6 @@ async def test_unpost_document_noop_when_nothing_posted(session_factory, open_pe
     assert count == 0
 
 
-@pytest.mark.asyncio
 async def test_unpost_document_only_affects_target_document(session_factory, open_period):
     """unpost_document leaves transactions from other documents untouched."""
     doc_cc = await _make_doc(session_factory, open_period.period_id, doc_type="credit_card", source_code=200101)
@@ -664,7 +617,6 @@ async def test_unpost_document_only_affects_target_document(session_factory, ope
     assert bank_txn.status == "posted"
 
 
-@pytest.mark.asyncio
 async def test_unpost_document_route(client, journal_period, session_factory):
     """POST /unpost removes staged/approved transactions from a document."""
     doc = await _make_doc(session_factory, journal_period.period_id, doc_type="credit_card", source_code=100101)
@@ -684,7 +636,6 @@ async def test_unpost_document_route(client, journal_period, session_factory):
     assert txn.journal_entry_id is None
 
 
-@pytest.mark.asyncio
 async def test_unpost_document_route_no_staged_returns_zero(client, open_period, session_factory):
     """Unpost with no staged/approved transactions returns count=0."""
     doc = await _make_doc(session_factory, open_period.period_id, source_code=100101)

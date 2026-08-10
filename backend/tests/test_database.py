@@ -56,7 +56,6 @@ async def seeded_engine():
     await eng.dispose()
 
 
-@pytest.mark.asyncio
 async def test_accounts_seeded(seeded_engine):
     factory = async_sessionmaker(seeded_engine, expire_on_commit=False)
     async with factory() as session:
@@ -64,7 +63,6 @@ async def test_accounts_seeded(seeded_engine):
     assert count == 69
 
 
-@pytest.mark.asyncio
 async def test_period_create(session: AsyncSession):
     period = Period(
         period_start=date(2024, 1, 1),
@@ -81,7 +79,6 @@ async def test_period_create(session: AsyncSession):
     assert result.status == "open"
 
 
-@pytest.mark.asyncio
 async def test_journal_entry_balanced(session: AsyncSession):
     # Seed two minimal accounts so FKs resolve
     checking = Account(
@@ -139,7 +136,6 @@ async def test_journal_entry_balanced(session: AsyncSession):
     assert net == Decimal("0.00")
 
 
-@pytest.mark.asyncio
 async def test_journal_line_check_constraint(session: AsyncSession):
     checking = Account(
         account_code=100101,
@@ -177,7 +173,6 @@ async def test_journal_line_check_constraint(session: AsyncSession):
         await session.commit()
 
 
-@pytest.mark.asyncio
 async def test_stated_balance_unique(session: AsyncSession):
     checking = Account(
         account_code=100101,

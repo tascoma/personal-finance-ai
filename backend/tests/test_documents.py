@@ -5,47 +5,12 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.databases import Base
-from app.dependencies import get_current_user, get_db_session
-from app.main import app
 from app.models.document import Document
-from app.models.user import User
 from app.services import document as document_service
 from app.services import period as period_service
-
-TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
-
-
-@pytest_asyncio.fixture
-async def session_factory():
-    eng = create_async_engine(TEST_DB_URL, echo=False)
-    async with eng.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    factory = async_sessionmaker(eng, expire_on_commit=False)
-    yield factory
-    await eng.dispose()
-
-
-@pytest_asyncio.fixture
-async def client(session_factory):
-    async def override_get_db_session():
-        async with session_factory() as session:
-            yield session
-
-    async def _mock_user() -> User:
-        import uuid
-        return User(user_id=uuid.uuid4(), email="test@test.com", hashed_password="", is_active=True)
-
-    app.dependency_overrides[get_db_session] = override_get_db_session
-    app.dependency_overrides[get_current_user] = _mock_user
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-    app.dependency_overrides.clear()
 
 
 @pytest_asyncio.fixture
@@ -64,7 +29,6 @@ def isolate_uploads(tmp_path, monkeypatch):
 # ── HTTP route tests ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_upload_pdf_success(client: AsyncClient, session_factory, open_period):
     files = {"file": ("statement.pdf", BytesIO(b"%PDF-1.4 dummy"), "application/pdf")}
     data = {"document_type": "bank_statement"}
@@ -84,7 +48,6 @@ async def test_upload_pdf_success(client: AsyncClient, session_factory, open_per
     assert Path(doc.file_path).exists()
 
 
-@pytest.mark.asyncio
 async def test_upload_without_document_type_defaults_to_unknown(
     client: AsyncClient, session_factory, open_period
 ):
@@ -102,7 +65,6 @@ async def test_upload_without_document_type_defaults_to_unknown(
     assert body["parse_status"] == "pending"
 
 
-@pytest.mark.asyncio
 async def test_upload_rejects_oversized_file_without_leaving_partial(
     client: AsyncClient, session_factory, open_period, monkeypatch
 ):
@@ -126,7 +88,6 @@ async def test_upload_rejects_oversized_file_without_leaving_partial(
     assert not period_dir.exists() or not any(period_dir.iterdir())
 
 
-@pytest.mark.asyncio
 async def test_upload_mortgage_statement(client: AsyncClient, session_factory, open_period):
     files = {"file": ("mortgage.pdf", BytesIO(b"%PDF-1.4 dummy"), "application/pdf")}
     data = {"document_type": "mortgage_statement"}
@@ -139,7 +100,6 @@ async def test_upload_mortgage_statement(client: AsyncClient, session_factory, o
     assert response.json()["document_type"] == "mortgage_statement"
 
 
-@pytest.mark.asyncio
 async def test_upload_rejects_invalid_extension(
     client: AsyncClient, session_factory, open_period
 ):
@@ -158,7 +118,6 @@ async def test_upload_rejects_invalid_extension(
     assert count is None
 
 
-@pytest.mark.asyncio
 async def test_upload_rejects_invalid_document_type(
     client: AsyncClient, session_factory, open_period
 ):
@@ -173,7 +132,6 @@ async def test_upload_rejects_invalid_document_type(
     assert "Invalid document_type" in response.json()["detail"]
 
 
-@pytest.mark.asyncio
 async def test_upload_duplicate_filename_gets_suffix(
     client: AsyncClient, session_factory, open_period
 ):
@@ -195,7 +153,6 @@ async def test_upload_duplicate_filename_gets_suffix(
     assert len(paths) == 2  # distinct file paths on disk
 
 
-@pytest.mark.asyncio
 async def test_upload_filename_with_path_traversal_is_contained(
     client: AsyncClient, session_factory, open_period
 ):
@@ -220,7 +177,6 @@ async def test_upload_filename_with_path_traversal_is_contained(
     assert stored.exists()
 
 
-@pytest.mark.asyncio
 async def test_upload_blocked_when_period_not_open(
     client: AsyncClient, session_factory, open_period
 ):
@@ -240,7 +196,6 @@ async def test_upload_blocked_when_period_not_open(
     assert "open period" in response.json()["detail"]
 
 
-@pytest.mark.asyncio
 async def test_delete_document(client: AsyncClient, session_factory, open_period):
     files = {"file": ("statement.pdf", BytesIO(b"%PDF"), "application/pdf")}
     data = {"document_type": "bank_statement"}
@@ -266,7 +221,6 @@ async def test_delete_document(client: AsyncClient, session_factory, open_period
     assert not file_path.exists()
 
 
-@pytest.mark.asyncio
 async def test_delete_document_cascades_to_parsed_data(
     client: AsyncClient, session_factory, open_period
 ):
