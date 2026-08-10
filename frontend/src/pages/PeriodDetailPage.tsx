@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { fetchPeriodDetail, updatePeriodStatus, stepBackPeriod, reopenPeriod, deletePeriod, orchestrateParse, saveBalances } from '../api/periods'
-import { deleteDocument, parseDocument, unpostDocument, setDocumentSourceAccount } from '../api/documents'
+import { deleteDocument, parseDocument, unpostDocument, setDocumentSourceAccount, uploadDocument } from '../api/documents'
 import { addManualTransactions, clearAllTransactions } from '../api/transactions'
 import Layout from '../components/Layout'
 import PageHeader from '../components/PageHeader'
@@ -11,6 +11,7 @@ import PeriodStepper from '../components/PeriodStepper'
 import WorkflowHint from '../components/WorkflowHint'
 import Banner from '../components/Banner'
 import EmptyState from '../components/EmptyState'
+import Tabs from '../components/Tabs'
 import SvgIcon from '../components/SvgIcon'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useConfirm } from '../hooks/useConfirm'
@@ -113,7 +114,7 @@ export default function PeriodDetailPage() {
         const fd = new FormData()
         fd.append('file', f)
         try {
-          await (await import('../api/documents')).uploadDocument(periodId!, fd)
+          await uploadDocument(periodId!, fd)
           setParsing((cur) => cur.map((c) => c.id === gId ? { ...c, progress: 100 } : c))
           setTimeout(() => {
             setParsing((cur) => cur.filter((c) => c.id !== gId))
@@ -235,16 +236,15 @@ export default function PeriodDetailPage() {
 
         {period && <WorkflowHint period={period} page="detail" />}
 
-        <div className="tabs">
-          {(['documents', 'journal', 'balances', 'reconcile', 'lifecycle'] as Tab[]).map((t) => (
-            <button key={t} className={`tab${activeTab === t ? ' active' : ''}`} onClick={() => setActiveTab(t)}>
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-              {t === 'journal' && transaction_count > 0 && (
-                <span className="mono muted" style={{ marginLeft: 5, fontSize: 11 }}>{transaction_count}</span>
-              )}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          active={activeTab}
+          onChange={(k) => setActiveTab(k as Tab)}
+          tabs={(['documents', 'journal', 'balances', 'reconcile', 'lifecycle'] as Tab[]).map((t) => ({
+            key: t,
+            label: t.charAt(0).toUpperCase() + t.slice(1),
+            count: t === 'journal' && transaction_count > 0 ? transaction_count : undefined,
+          }))}
+        />
 
         {/* Documents tab */}
         {activeTab === 'documents' && (

@@ -5,6 +5,7 @@ import { fetchPeriods } from '../api/periods'
 import Layout from '../components/Layout'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
+import Tabs from '../components/Tabs'
 import SvgIcon from '../components/SvgIcon'
 import { fmtMoney } from '../utils/format'
 import type { CashflowStatementResponse, IncomeStatementResponse } from '../types'
@@ -187,13 +188,12 @@ export default function StatementsPage() {
           }
         />
 
-        <div className="tabs print-hide">
-          {tabs.map((t) => (
-            <button key={t.id} className={`tab${activeTab === t.id ? ' active' : ''}`} onClick={() => setActiveTab(t.id)}>
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          className="print-hide"
+          active={activeTab}
+          onChange={(k) => setActiveTab(k as Tab)}
+          tabs={tabs.map((t) => ({ key: t.id, label: t.label }))}
+        />
 
         {/* Balance Sheet */}
         {(activeTab === 'balance_sheet' || printMode) && (

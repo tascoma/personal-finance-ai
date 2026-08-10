@@ -8,7 +8,7 @@ import RingChart from '../../components/RingChart'
 import { fetchCashflow } from '../../api/statements'
 import { fetchPeriods } from '../../api/periods'
 import { fmtMoney, fmtPeriod } from '../../utils/format'
-import { getChartPalette, moneyTick } from './chartTheme'
+import { CATEGORICAL_VARS, categoricalColors, getChartPalette, moneyTick } from './chartTheme'
 import type { DashboardTabProps } from './constants'
 
 interface AssetsTabProps extends DashboardTabProps {
@@ -73,8 +73,7 @@ export default function AssetsTab({ data, scopeLabel, selectedYear }: AssetsTabP
   useEffect(() => {
     if (!assetStackRef.current || !data.asset_series.length) return
     const palette = getChartPalette()
-    const { green, accent, amber, purple, pink } = palette
-    const catColors = [accent, green, amber, purple, '#38bdf8', pink, '#fb923c', '#34d399']
+    const catColors = categoricalColors(palette)
     const periodLabels = [...new Set(data.asset_series.map((p) => p.period_label))]
     const subCategories = [...new Set(data.asset_series.map((p) => p.sub_category))]
     if (!periodLabels.length || !subCategories.length) return
@@ -143,7 +142,7 @@ export default function AssetsTab({ data, scopeLabel, selectedYear }: AssetsTabP
 
   const composition = data.asset_composition
   const totalAssets = parseFloat(data.total_assets)
-  const assetColors = ['var(--accent)', 'var(--green)', 'var(--amber)', 'var(--purple)', '#38bdf8', 'var(--pink)', '#fb923c', '#34d399']
+  const assetColors = CATEGORICAL_VARS
   const ringData = composition.slice(0, 6).map((d, i) => ({ amount: parseFloat(d.amount), color: assetColors[i % assetColors.length], name: d.sub_category }))
 
   const totalAssetsCurr = parseFloat(data.total_assets)

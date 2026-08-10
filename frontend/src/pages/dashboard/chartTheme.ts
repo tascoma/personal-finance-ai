@@ -55,6 +55,36 @@ export function applyChartDefaults(palette: ChartPalette): void {
   Chart.defaults.font.size = 12
 }
 
+/**
+ * Categorical series ramps.
+ *
+ * Six near-identical copies of these arrays were inlined across the dashboard
+ * tabs — two of them byte-identical within the same file. Two orderings are
+ * genuinely intended: `categorical` leads with accent/green for asset and
+ * net-worth breakdowns, `categoricalExpense` leads with red/amber for spending.
+ *
+ * Two forms, because the consumers differ: Chart.js draws to a canvas and needs
+ * concrete colors, while the SVG charts take `var(--x)` strings so they retrack
+ * the theme through CSS without needing a re-render.
+ */
+export function categoricalColors(p: ChartPalette): string[] {
+  return [p.accent, p.green, p.amber, p.purple, '#38bdf8', p.pink, '#fb923c', '#34d399']
+}
+
+export function categoricalExpenseColors(p: ChartPalette): string[] {
+  return [p.red, p.amber, p.accent, p.green, p.purple, '#38bdf8', '#fb923c', '#34d399']
+}
+
+export const CATEGORICAL_VARS = [
+  'var(--accent)', 'var(--green)', 'var(--amber)', 'var(--purple)',
+  '#38bdf8', 'var(--pink)', '#fb923c', '#34d399',
+]
+
+export const CATEGORICAL_EXPENSE_VARS = [
+  'var(--red)', 'var(--amber)', 'var(--accent)', 'var(--green)',
+  'var(--purple)', 'var(--pink)', '#38bdf8', '#fb923c',
+]
+
 export const moneyTick = (v: number | string) => `$${Number(v).toLocaleString()}`
 
 export const moneyTip = (ctx: { parsed: { y?: number | null; x?: number | null } }) => {

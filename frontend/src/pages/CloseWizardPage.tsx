@@ -14,7 +14,7 @@ import SvgIcon from '../components/SvgIcon'
 import { useConfirm } from '../hooks/useConfirm'
 import { useToast } from '../contexts/ToastContext'
 import ConfidencePill from '../components/ConfidencePill'
-import { fmtPeriod, fmtDebitCredit } from '../utils/format'
+import { fmtDebitCredit, fmtMoney, fmtPeriod } from '../utils/format'
 
 const WIZARD_STEPS = [
   { key: 'docs',      name: 'Documents parsed',      hint: 'All statements uploaded' },
@@ -468,7 +468,7 @@ export default function CloseWizardPage() {
                                   </select>
                                 </td>
                                 <td><ConfidencePill confidence={t.classifier_confidence} /></td>
-                                <td className="mono text-right" style={{ color: n < 0 ? 'var(--red)' : 'var(--green)', whiteSpace: 'nowrap' }}>{n < 0 ? `−$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`}</td>
+                                <td className="mono text-right" style={{ color: n < 0 ? 'var(--red)' : 'var(--green)', whiteSpace: 'nowrap' }}>{fmtMoney(n)}</td>
                                 <td className="text-right"><StatusBadge status={t.status} /></td>
                                 <td className="text-right">
                                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
