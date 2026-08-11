@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 import openpyxl
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -21,12 +21,9 @@ from app.agents._base import AgentError
 from app.agents.orchestrator import DocumentPlan, OrchestrationPlan
 from app.core.config import settings
 from app.databases import Base
-from app.dependencies import get_current_user, get_db_session
-from app.main import app
 from app.models.account import Account
 from app.models.document import Document
 from app.models.raw_transaction import RawTransaction
-from app.models.user import User
 from app.services import classify as classify_service
 from app.services import document as document_service
 from app.services import orchestrate as orchestrate_service
@@ -162,27 +159,9 @@ async def mislabeled_csv_doc(session_factory, open_period, upload_root):
     return doc
 
 
-@pytest_asyncio.fixture
-async def client(session_factory):
-    async def override_get_db_session():
-        async with session_factory() as session:
-            yield session
-
-    async def _mock_user() -> User:
-        return User(user_id=uuid.uuid4(), email="test@test.com", hashed_password="", is_active=True)
-
-    app.dependency_overrides[get_db_session] = override_get_db_session
-    app.dependency_overrides[get_current_user] = _mock_user
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=True) as c:
-        yield c
-    app.dependency_overrides.clear()
-
-
 # ── service-level tests ──────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_orchestrate_parses_all_pending_documents(
     session_factory, csv_bank_doc, xlsx_card_doc, open_period, monkeypatch
 ):
@@ -228,7 +207,6 @@ async def test_orchestrate_parses_all_pending_documents(
     assert all(d.parse_status == "complete" for d in docs)
 
 
-@pytest.mark.asyncio
 async def test_orchestrate_corrects_wrong_document_type(
     session_factory, mislabeled_csv_doc, open_period, monkeypatch
 ):
@@ -265,7 +243,6 @@ async def test_orchestrate_corrects_wrong_document_type(
     assert doc.parse_status == "complete"
 
 
-@pytest.mark.asyncio
 async def test_orchestrate_skips_classifier_when_no_bank_or_credit(
     session_factory, open_period, upload_root, monkeypatch
 ):
@@ -333,7 +310,6 @@ async def test_orchestrate_skips_classifier_when_no_bank_or_credit(
     classifier_mock.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_orchestrate_one_failure_does_not_block_others(
     session_factory, csv_bank_doc, open_period, upload_root, monkeypatch
 ):
@@ -386,7 +362,6 @@ async def test_orchestrate_one_failure_does_not_block_others(
     assert result.failed == 1
 
 
-@pytest.mark.asyncio
 async def test_orchestrate_unresolved_source_account_is_needs_review(
     session_factory, csv_bank_doc, open_period, monkeypatch
 ):
@@ -423,7 +398,6 @@ async def test_orchestrate_unresolved_source_account_is_needs_review(
     assert doc.parse_status == "pending"
 
 
-@pytest.mark.asyncio
 async def test_orchestrate_no_pending_documents_is_noop(
     session_factory, open_period, monkeypatch
 ):
@@ -543,7 +517,6 @@ def test_unreadable_file_error_is_scrubbed_but_stays_diagnostic(tmp_path):
 # ── HTTP route tests ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
 async def test_route_returns_orchestration_result(
     client: AsyncClient, csv_bank_doc, open_period, monkeypatch
 ):
@@ -570,7 +543,6 @@ async def test_route_returns_orchestration_result(
     assert body["failed"] == 0
 
 
-@pytest.mark.asyncio
 async def test_route_returns_502_when_orchestrator_agent_fails(
     client: AsyncClient, csv_bank_doc, open_period, monkeypatch
 ):

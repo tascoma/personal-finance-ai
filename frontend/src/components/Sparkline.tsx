@@ -11,6 +11,8 @@ interface Props {
   strokeWidth?: number
   showAxes?: boolean
   axisColor?: string
+  /** Gridline color. Defaults to the theme border token. */
+  gridColor?: string
 }
 
 interface TooltipState {
@@ -40,7 +42,8 @@ export default function Sparkline({
   fillContainer = false,
   strokeWidth = 1.8,
   showAxes = false,
-  axisColor = 'rgba(255,255,255,0.55)',
+  axisColor,
+  gridColor,
 }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
@@ -48,6 +51,16 @@ export default function Sparkline({
   useEffect(() => {
     const cvs = ref.current
     if (!cvs || !data.length) return
+    // Canvas does not resolve CSS custom properties — assigning `var(--x)` to
+    // fillStyle is a no-op that leaves the previous color in place — so read
+    // the tokens off the document. Defaulting from the theme also gives this
+    // component a light-theme path, which the previous hardcoded
+    // `rgba(255,255,255,0.55)` never had.
+    const cs = getComputedStyle(document.documentElement)
+    const token = (name: string, fallback: string) =>
+      cs.getPropertyValue(name).trim() || fallback
+    const resolvedAxis = axisColor ?? token('--text-3', 'rgba(255,255,255,0.55)')
+    const resolvedGrid = gridColor ?? token('--border', 'rgba(255,255,255,0.12)')
     const dpr = window.devicePixelRatio || 1
     const w = cvs.clientWidth
     const h = cvs.clientHeight
@@ -81,7 +94,7 @@ export default function Sparkline({
         const y = py(v)
 
         ctx.beginPath()
-        ctx.strokeStyle = axisColor.replace(/[\d.]+\)$/, '0.12)')
+        ctx.strokeStyle = resolvedGrid
         ctx.lineWidth = 0.75
         ctx.setLineDash([3, 4])
         ctx.moveTo(padL, y)
@@ -89,7 +102,7 @@ export default function Sparkline({
         ctx.stroke()
         ctx.setLineDash([])
 
-        ctx.fillStyle = axisColor
+        ctx.fillStyle = resolvedAxis
         ctx.textAlign = 'right'
         ctx.textBaseline = 'middle'
         ctx.fillText(fmtYTick(v), padL - 5, y)
@@ -104,7 +117,7 @@ export default function Sparkline({
         for (let i = 0; i < labels.length; i += step) shown.add(i)
         shown.add(labels.length - 1)
         for (const i of shown) {
-          ctx.fillStyle = axisColor
+          ctx.fillStyle = resolvedAxis
           ctx.textAlign = i === 0 ? 'left' : i === labels.length - 1 ? 'right' : 'center'
           ctx.fillText(labels[i], px(i), h - 5)
         }
@@ -137,7 +150,7 @@ export default function Sparkline({
       ctx.fillStyle = color
       ctx.fill()
     }
-  }, [data, labels, color, fill, strokeWidth, showAxes, axisColor])
+  }, [data, labels, color, fill, strokeWidth, showAxes, axisColor, gridColor])
 
   function handleMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
     const cvs = ref.current

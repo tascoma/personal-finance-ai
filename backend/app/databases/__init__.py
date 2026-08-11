@@ -1,7 +1,7 @@
 import logging
 from collections.abc import AsyncGenerator
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -128,11 +128,12 @@ async def _seed_accounts_if_empty() -> None:
 
 
 async def init_db() -> None:
-    from app.models import (  # noqa: F401 — import triggers Base registration
-        Account, Period, Document, RawTransaction,
-        JournalEntry, JournalLine, StatedBalance,
-        Reconciliation, ReviewQueue, User,
-    )
+    # Importing the package registers every model on Base.metadata via
+    # app/models/__init__.py. Import the package rather than re-listing each
+    # model here: a per-model list has to be kept in sync with alembic/env.py
+    # and app/models/__init__.py, and drifting out of sync is what previously
+    # left `device_tokens` out of create_all entirely.
+    import app.models  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

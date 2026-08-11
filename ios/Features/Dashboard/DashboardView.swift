@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct DashboardView: View {
-    @Environment(AppEnvironment.self) private var env
     @State private var vm: DashboardViewModel
     @State private var periodVM: PeriodTabViewModel
     @State private var selectedTab: Tab = .overview
@@ -89,17 +88,17 @@ struct DashboardView: View {
                 ProgressView()
                 Text("Loading dashboard…")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.appTextSecondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .error(let message):
             VStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle")
                     .font(.largeTitle)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.appRed)
                 Text(message)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.appTextSecondary)
                     .multilineTextAlignment(.center)
                 Button("Try again") {
                     Task { await vm.refresh() }

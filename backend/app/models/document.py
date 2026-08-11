@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -30,14 +29,14 @@ class Document(Base):
     document_type: Mapped[str] = mapped_column(String, nullable=False)
     file_name: Mapped[str] = mapped_column(String, nullable=False)
     file_path: Mapped[str] = mapped_column(String, nullable=False)
-    source_account_code: Mapped[Optional[int]] = mapped_column(
+    source_account_code: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("accounts.account_code"), nullable=True
     )
     parse_status: Mapped[str] = mapped_column(
         String, default="pending", nullable=False
     )
-    parsed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    llm_model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    parsed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

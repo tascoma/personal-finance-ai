@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { Chart } from 'chart.js'
 import EmptyState from '../../components/EmptyState'
 import SvgIcon from '../../components/SvgIcon'
-import Sparkline from '../../components/Sparkline'
+import HeroSparkline from '../../components/HeroSparkline'
 import RingChart from '../../components/RingChart'
 import { fmtMoney } from '../../utils/format'
-import { applyChartDefaults, getChartPalette, moneyTick } from './chartTheme'
+import { CATEGORICAL_EXPENSE_VARS, categoricalExpenseColors, getChartPalette, moneyTick } from './chartTheme'
 import type { DashboardTabProps } from './constants'
 
 export default function ExpensesTab({ data, scopeLabel }: DashboardTabProps) {
@@ -17,8 +17,7 @@ export default function ExpensesTab({ data, scopeLabel }: DashboardTabProps) {
   useEffect(() => {
     if (!stackRef.current || !data.expense_category_series.length) return
     const palette = getChartPalette()
-    const { red, accent, green, amber } = palette
-    const catColors = [red, amber, accent, green, '#a78bfa', '#38bdf8', '#fb923c', '#34d399']
+    const catColors = categoricalExpenseColors(palette)
     // Stable map keyed by top_expense_categories order — same order used by donut + comp charts
     const stableCatMap = new Map<string, string>(
       data.top_expense_categories.map((d, i) => [d.category, catColors[i % catColors.length]]),
@@ -47,9 +46,7 @@ export default function ExpensesTab({ data, scopeLabel }: DashboardTabProps) {
   useEffect(() => {
     if (!compRef.current || !data.top_expense_categories.length) return
     const palette = getChartPalette()
-    applyChartDefaults(palette)
-    const { red, accent, green, amber } = palette
-    const catColors = [red, amber, accent, green, '#a78bfa', '#38bdf8', '#fb923c', '#34d399']
+    const catColors = categoricalExpenseColors(palette)
     const comp = parseFloat(data.compensation_income)
     const pcts = data.top_expense_categories.map((d) => comp > 0 ? (parseFloat(d.amount) / comp) * 100 : 0)
     const chart = new Chart<'bar'>(compRef.current, {
@@ -71,7 +68,7 @@ export default function ExpensesTab({ data, scopeLabel }: DashboardTabProps) {
   const lastBarData = bars[bars.length - 1]
   const prevBarData = bars[bars.length - 2]
   const periodDeltaPct = prevBarData && lastBarData && prevBarData.expenses ? ((parseFloat(lastBarData.expenses) - parseFloat(prevBarData.expenses)) / parseFloat(prevBarData.expenses)) * 100 : null
-  const expenseCatColors = ['var(--red)', 'var(--amber)', 'var(--accent)', 'var(--green)', 'var(--purple)', 'var(--pink)', '#38bdf8', '#fb923c']
+  const expenseCatColors = CATEGORICAL_EXPENSE_VARS
   const expenseRingData = data.top_expense_categories.slice(0, 8).map((d, i) => ({
     amount: parseFloat(d.amount),
     color: expenseCatColors[i % expenseCatColors.length],
@@ -106,7 +103,7 @@ export default function ExpensesTab({ data, scopeLabel }: DashboardTabProps) {
           </div>
         </div>
         <div style={{ alignSelf: 'stretch', display: 'flex', flexDirection: 'column' }}>
-          <Sparkline data={bars.map((b) => parseFloat(b.expenses))} labels={bars.map((b) => b.period_label)} showAxes fillContainer color="white" fill="rgba(255,255,255,0.22)" strokeWidth={2.2} />
+          <HeroSparkline data={bars.map((b) => parseFloat(b.expenses))} labels={bars.map((b) => b.period_label)} />
         </div>
       </div>
       <div className="grid grid-12">

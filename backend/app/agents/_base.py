@@ -7,7 +7,7 @@ and output schema.
 """
 
 import logging
-from typing import Any, TypeVar
+from typing import Any
 
 from pydantic import BaseModel
 from pydantic_ai import Agent
@@ -18,8 +18,6 @@ from app.core.config import settings
 
 logger = logging.getLogger("app.agents")
 
-TOutput = TypeVar("TOutput", bound=BaseModel)
-
 
 class AgentError(Exception):
     """Raised by `run_agent` when the underlying LLM call fails.
@@ -29,7 +27,9 @@ class AgentError(Exception):
     """
 
 
-def build_agent(output_type: type[TOutput], system_prompt: str) -> Agent[None, TOutput]:
+def build_agent[TOutput: BaseModel](
+    output_type: type[TOutput], system_prompt: str
+) -> Agent[None, TOutput]:
     return Agent(
         AnthropicModel(
             settings.anthropic_model,
@@ -40,7 +40,7 @@ def build_agent(output_type: type[TOutput], system_prompt: str) -> Agent[None, T
     )
 
 
-async def run_agent(
+async def run_agent[TOutput: BaseModel](
     agent: Agent[None, TOutput],
     name: str,
     prompt: Any,

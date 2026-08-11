@@ -7,23 +7,18 @@ one request.
 
 from __future__ import annotations
 
-import uuid
-from decimal import Decimal
-from typing import Any, Optional
-
 from pydantic import BaseModel
 
 from app.schemas.account import AccountRead
 from app.schemas.document import DocumentRead
 from app.schemas.journal import JournalEntryRead, JournalLineRead
-from app.schemas.period import PeriodRead
+from app.schemas.period import PeriodRead, PeriodStatus
 from app.schemas.raw_transaction import RawTransactionRead
 from app.schemas.reconciliation import (
     EquityRollupPreview,
     ReconciliationDetail,
     TempAccountPreview,
 )
-
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
@@ -43,6 +38,43 @@ class NetWorthPoint(BaseModel):
 class ExpenseCategoryPoint(BaseModel):
     category: str
     amount: str
+
+
+class MoneyFlowBucketPoint(BaseModel):
+    category: str
+    amount: str
+
+
+class MoneyFlowResponse(BaseModel):
+    """Sources and uses; sum(income) == sum(expenses) + sum(fund_flows).
+
+    Amounts are signed: positive fund_flows are uses (asset bought, debt repaid),
+    negative ones are sources (cash drawn down).
+    """
+
+    income: list[MoneyFlowBucketPoint]
+    expenses: list[MoneyFlowBucketPoint]
+    fund_flows: list[MoneyFlowBucketPoint]
+
+
+class PaycheckFlowResponse(BaseModel):
+    """Paycheck-shaped money flow: gross → withholdings → take-home → spending.
+
+    Amounts are strings (decimals). Invariants:
+      sum(earnings) + sum(employer) == take_home + sum(deductions)
+      take_home + sum(other_income) + sum(drawdowns) == sum(uses)
+    Employer contributions appear once as income (employer) and once as a
+    withholding (their paired asset debit stays in deductions). Deductions use
+    per-account labels (e.g. "401(k)", "HSA") with sub_category fallback.
+    """
+
+    earnings: list[MoneyFlowBucketPoint]
+    deductions: list[MoneyFlowBucketPoint]
+    employer: list[MoneyFlowBucketPoint]
+    take_home: str
+    other_income: list[MoneyFlowBucketPoint]
+    drawdowns: list[MoneyFlowBucketPoint]
+    uses: list[MoneyFlowBucketPoint]
 
 
 class ExpenseCategorySeriesPoint(BaseModel):
@@ -99,13 +131,15 @@ class DashboardResponse(BaseModel):
     period_bars: list[PeriodBarPoint]
     net_worth_series: list[NetWorthPoint]
     top_expense_categories: list[ExpenseCategoryPoint]
+    money_flow: MoneyFlowResponse
+    paycheck_flow: PaycheckFlowResponse
     expense_category_series: list[ExpenseCategorySeriesPoint]
     asset_composition: list[AssetCompositionPoint]
     asset_series: list[AssetSeriesPoint]
-    ytd_year: Optional[int]
+    ytd_year: int | None
     ytd_retirement_contributions: list[RetirementContributionPoint]
     recent_entries: list[RecentEntryPoint]
-    active_period: Optional[PeriodRead]
+    active_period: PeriodRead | None
 
 
 # ── Period detail ─────────────────────────────────────────────────────────────
@@ -124,8 +158,8 @@ class PeriodDetailResponse(BaseModel):
     stated_balances: dict[int, str]
     has_pending_documents: bool
     posted_doc_ids: list[str]
-    next_status: Optional[str]
-    prev_status: Optional[str]
+    next_status: str | None
+    prev_status: str | None
 
 
 # ── Ledger ────────────────────────────────────────────────────────────────────
@@ -222,8 +256,8 @@ class JournalPageResponse(BaseModel):
     has_unclassified: bool
     documents: list[DocumentRead]
     docs_missing_source: list[DocumentRead]
-    next_status: Optional[str]
-    prev_status: Optional[str]
+    next_status: str | None
+    prev_status: str | None
 
 
 # ── Reconciliation page ───────────────────────────────────────────────────────
@@ -248,7 +282,7 @@ class ReconcilePageResponse(BaseModel):
     has_gaps: bool
     has_investment_gaps: bool
     has_non_investment_gaps: bool
-    analysis: Optional[ReconciliationAnalysisSchema]
+    analysis: ReconciliationAnalysisSchema | None
     temp_preview: TempAccountPreview
     equity_preview: EquityRollupPreview
 
@@ -271,7 +305,7 @@ class JournalLineCreate(BaseModel):
     account_code: int
     debit: str
     credit: str
-    memo: Optional[str] = None
+    memo: str | None = None
 
 
 class ManualJournalEntryCreate(BaseModel):
@@ -300,11 +334,11 @@ class ParseResult(BaseModel):
 
 
 class StatusUpdateRequest(BaseModel):
-    new_status: str
+    new_status: PeriodStatus
 
 
 class SourceAccountRequest(BaseModel):
-    source_account_code: Optional[int] = None
+    source_account_code: int | None = None
 
 
 class AccountCodeRequest(BaseModel):

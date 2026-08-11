@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 
 from pydantic import BaseModel
 
@@ -16,7 +17,7 @@ SYSTEM_PROMPT = (
 class ExtractedTxn(BaseModel):
     txn_date: date
     description: str
-    amount: float  # signed: positive = money in, negative = money out
+    amount: Decimal  # signed: positive = money in, negative = money out
 
 
 class ExtractedStatement(BaseModel):

@@ -1,67 +1,159 @@
-"""Dashboard metrics — all data computed in two queries (lines + recent entries)."""
+"""Dashboard metrics — all data computed in two queries (lines + recent entries).
+
+Every monetary field on the chart dataclasses below is `Decimal`, matching the
+`Numeric(15, 2)` columns they aggregate. The route layer serializes them with
+`str(...)`, so a float anywhere in this chain would leak its repr into the API
+(a period net of 1234.56 arriving at the client as "1234.5600000000001").
+"""
 
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.money import ZERO as _ZERO
 from app.models.account import Account
 from app.models.journal import JournalEntry, JournalLine
 from app.models.period import Period
 from app.services.statements import OCI_ACCOUNT_CODES
 
-_ZERO = Decimal("0")
-
 
 @dataclass
 class PeriodBar:
     label: str
-    income: float
-    expenses: float
-    net: float
+    income: Decimal
+    expenses: Decimal
+    net: Decimal
 
 
 @dataclass
 class NetWorthPoint:
     label: str
-    net_worth: float
+    net_worth: Decimal
 
 
 @dataclass
 class ExpenseCategory:
     label: str
-    amount: float
+    amount: Decimal
+
+
+@dataclass
+class MoneyFlowBucket:
+    label: str
+    amount: Decimal
+
+
+@dataclass
+class MoneyFlow:
+    """Sources and uses of money, grouped by sub_category.
+
+    Guarantees the identity
+
+        sum(income) == sum(expenses) + sum(fund_flows)
+
+    where a *use* of funds is `debit - credit` for both Asset and Liability
+    lines: an asset increase is a use, a liability decrease (paying down debt)
+    is a use, and a cash decrease is a negative use — i.e. a source. Income is
+    just a negative use, negated once here so it reads positive.
+
+    The identity holds because over any union of whole balanced entries
+    `sum(debit - credit) == 0`; restricting to entries whose lines are all
+    Income/Expense/Asset/Liability rearranges that into the statement above.
+    See _flow_entry_is_excluded for the restriction.
+
+    Note this is a *different* line set from total_income/total_expenses, which
+    exclude OCI per-line rather than per-entry. The two agree unless income is
+    ever booked inside an excluded entry (e.g. a receipt posted against equity).
+    """
+
+    income: list[MoneyFlowBucket]
+    expenses: list[MoneyFlowBucket]
+    fund_flows: list[MoneyFlowBucket]
+
+
+# Employer-side income that never touches take-home cash: each is offset by an
+# asset debit in the same paystub entry (a retirement/investment account), not by
+# the net-pay deposit. Listed separately so the Sankey can label the source as
+# employer money; the paired asset debit stays in the deduction buckets, so the
+# contribution appears once as income and once as a withholding — the two sides
+# of the same flow. Keyed income account code -> destination asset sub_category.
+_EMPLOYER_CONTRIB_DESTINATIONS: dict[int, str] = {
+    400106: "Retirement & Tax-Advantaged Accounts",  # employer 401(k) match
+    400104: "Investments",                           # employer stock contribution
+}
+
+# Paystub withholdings that land in an asset get a per-account label so the
+# Sankey can show "401(k)" (employee deferral + employer match merged) rather
+# than a whole sub_category. Expense withholdings fall back to sub_category
+# ("Payroll Taxes", "Employee Benefits", "Giving"). Mirrored by
+# DEDUCTION_FUND_LABELS in frontend/src/pages/dashboard/sankeyData.ts.
+_DEDUCTION_ACCOUNT_LABELS: dict[int, str] = {
+    111102: "401(k)",                # Merrill – Roth 401(k)
+    111103: "HSA",                   # HSA – Investments
+    100201: "HSA",                   # HSA – Cash (Restricted Cash)
+    112101: "Vested Fidelity",       # Fidelity – RSUs (Vested)
+    110102: "ComputerShare – ASPP",  # employee ASPP + employer stock
+}
+
+
+@dataclass
+class PaycheckFlow:
+    """Paycheck-shaped money flow: gross → withholdings → take-home → spending.
+
+    Built from the same balanced whole-entry line set as MoneyFlow, but decomposed
+    into a multi-stage graph. Paystub entries (source_type == "paystub") are split
+    into gross earnings, the withholdings that branch off (taxes, benefits, and
+    pre-tax savings), and the net cash actually deposited (take_home). Everything
+    else feeds a downstream "spendable" pool along with take-home.
+
+    Invariants, exact over Decimal (see test_paycheck_flow_balances):
+      sum(earnings) + sum(employer)            == take_home + sum(deductions)
+      take_home + sum(other_income) + drawdowns_total == sum(uses)
+    Employer contributions appear once as income (the employer list) and once as
+    a withholding (their paired asset debit stays in deductions) — the two sides
+    of the same flow, exactly like an employee deferral.
+    """
+
+    earnings: list[MoneyFlowBucket]      # employee gross by sub_category
+    deductions: list[MoneyFlowBucket]    # taxes, benefits, savings withholdings —
+                                         # per-account labels via _DEDUCTION_ACCOUNT_LABELS,
+                                         # sub_category fallback
+    employer: list[MoneyFlowBucket]      # employer contributions; label = savings destination
+    take_home: Decimal                   # net cash deposited = sum(earnings) − sum(deductions)
+    other_income: list[MoneyFlowBucket]  # non-paystub income by sub_category
+    drawdowns: list[MoneyFlowBucket]     # non-paystub sources feeding spending (cash drawn, assets sold)
+    uses: list[MoneyFlowBucket]          # living expenses + post-tax savings + cash saved
 
 
 @dataclass
 class ExpenseCategorySeriesPoint:
     period_label: str
     category: str
-    amount: float
+    amount: Decimal
 
 
 @dataclass
 class AssetCompositionPoint:
     sub_category: str
-    amount: float
+    amount: Decimal
 
 
 @dataclass
 class AssetSeriesPoint:
     period_label: str
     sub_category: str
-    amount: float
+    amount: Decimal
 
 
 @dataclass
 class RetirementContributionPoint:
     account_code: int
     account_name: str
-    amount: float
+    amount: Decimal
 
 
 @dataclass
@@ -70,7 +162,7 @@ class RecentEntry:
     entry_date: str
     source_type: str
     period_label: str
-    total_debit: float
+    total_debit: Decimal
 
 
 @dataclass
@@ -90,6 +182,8 @@ class DashboardData:
     period_bars: list[PeriodBar]
     net_worth_series: list[NetWorthPoint]
     top_expense_categories: list[ExpenseCategory]
+    money_flow: MoneyFlow
+    paycheck_flow: PaycheckFlow
     expense_category_series: list[ExpenseCategorySeriesPoint]
     asset_composition: list[AssetCompositionPoint]
     asset_series: list[AssetSeriesPoint]
@@ -101,7 +195,7 @@ class DashboardData:
     tax_advantaged: Decimal
     tax_advantaged_prev: Decimal
     total_assets_prev: Decimal
-    ytd_year: Optional[int]
+    ytd_year: int | None
     ytd_retirement_contributions: list[RetirementContributionPoint]
 
 
@@ -150,18 +244,152 @@ def _expense_by_subcategory(
             continue
         by_cat[acct.sub_category] += line.debit_amount - line.credit_amount
     return sorted(
-        [ExpenseCategory(label=k, amount=float(v)) for k, v in by_cat.items() if v > _ZERO],
+        [ExpenseCategory(label=k, amount=v) for k, v in by_cat.items() if v > _ZERO],
         key=lambda c: c.amount,
         reverse=True,
     )[:8]
 
 
+# The four account types whose debit − credit provably sums to zero over any
+# union of whole balanced entries. Anything else (Equity opening balances, memo
+# accounts) would leave the money-flow identity unbalanced.
+_FLOW_TYPES = frozenset({"Income", "Expense", "Asset", "Liability"})
+
+
+def _flow_entry_is_excluded(entry_lines: list[JournalLine], accounts: dict[int, Account]) -> bool:
+    """Whether an entry must be kept out of the money-flow model entirely.
+
+    Entries are dropped whole, never line by line — dropping one leg of a
+    balanced entry is exactly what breaks the identity in MoneyFlow. An entry
+    goes if any line is on an unknown account, on an account outside
+    _FLOW_TYPES, or on an OCI account (unrealized marks pair an income leg with
+    an asset leg that isn't a real use of funds, so both legs must go).
+    """
+    for line in entry_lines:
+        acct = accounts.get(line.account_code)
+        if acct is None or acct.account_type not in _FLOW_TYPES:
+            return True
+        if line.account_code in OCI_ACCOUNT_CODES:
+            return True
+    return False
+
+
+def _flow_buckets(
+    lines: list[JournalLine],
+    accounts: dict[int, Account],
+    types: tuple[str, ...],
+) -> list[MoneyFlowBucket]:
+    """Signed debit − credit by sub_category. Positive means a use of funds.
+
+    No normal_balance branch: contra accounts (e.g. Capital Losses, which is
+    debit-normal Income) net down their own bucket for free. Zero buckets are
+    dropped; negative ones are kept, since the Sankey renders them on the
+    opposite side rather than discarding them.
+    """
+    by_cat: dict[str, Decimal] = defaultdict(lambda: _ZERO)
+    for line in lines:
+        acct = accounts.get(line.account_code)
+        if acct is None or acct.account_type not in types:
+            continue
+        by_cat[acct.sub_category] += line.debit_amount - line.credit_amount
+    return sorted(
+        [MoneyFlowBucket(label=k, amount=v) for k, v in by_cat.items() if v != _ZERO],
+        key=lambda b: b.amount,
+        reverse=True,
+    )
+
+
+def _sorted_buckets(by_cat: dict[str, Decimal]) -> list[MoneyFlowBucket]:
+    return sorted(
+        [MoneyFlowBucket(label=k, amount=v) for k, v in by_cat.items() if v > _ZERO],
+        key=lambda b: b.amount,
+        reverse=True,
+    )
+
+
+def _paycheck_flow(
+    flow_entries: list[tuple[str, list[JournalLine]]],
+    accounts: dict[int, Account],
+    spendable_cash_codes: frozenset[int],
+) -> PaycheckFlow:
+    """Decompose balanced flow entries into the paycheck-shaped graph.
+
+    See PaycheckFlow for the model and its balance invariants. The invariants hold
+    because `sum(debit − credit) == 0` over each whole entry: within a paystub
+    entry the employee earning credits equal take-home plus the withholding debits,
+    and over non-paystub entries income equals expenses plus fund flows.
+    """
+    earn: dict[str, Decimal] = defaultdict(lambda: _ZERO)
+    employer: dict[str, Decimal] = defaultdict(lambda: _ZERO)
+    ded: dict[str, Decimal] = defaultdict(lambda: _ZERO)
+    take_home = _ZERO
+
+    other: dict[str, Decimal] = defaultdict(lambda: _ZERO)  # non-paystub income, positive
+    use: dict[str, Decimal] = defaultdict(lambda: _ZERO)    # non-paystub expense/asset/liab, signed (+ = use)
+    cash_change = _ZERO  # net change of spendable cash across all entries (includes take-home)
+
+    for source_type, entry_lines in flow_entries:
+        for line in entry_lines:
+            acct = accounts.get(line.account_code)
+            if acct is None:
+                continue
+            signed = line.debit_amount - line.credit_amount  # positive = a use of funds
+
+            if line.account_code in spendable_cash_codes:
+                cash_change += signed
+                if source_type == "paystub":
+                    take_home += signed
+                continue
+
+            if source_type == "paystub":
+                if acct.account_type == "Income":
+                    credit = -signed  # income is credit-normal
+                    dest = _EMPLOYER_CONTRIB_DESTINATIONS.get(line.account_code)
+                    if dest is not None:
+                        employer[dest] += credit
+                    else:
+                        earn[acct.sub_category] += credit
+                else:
+                    # Expense / Asset / Liability debit — a withholding branching
+                    # off the paystub before take-home.
+                    ded[_DEDUCTION_ACCOUNT_LABELS.get(line.account_code, acct.sub_category)] += signed
+            else:
+                if acct.account_type == "Income":
+                    other[acct.sub_category] += -signed
+                else:
+                    use[acct.sub_category] += signed
+
+    # Split non-paystub uses into uses (positive) and drawdown sources (negative),
+    # then place the net cash change on the correct side of the spendable pool.
+    uses: dict[str, Decimal] = defaultdict(lambda: _ZERO)
+    drawdowns: dict[str, Decimal] = defaultdict(lambda: _ZERO)
+    for cat, amt in use.items():
+        if amt > _ZERO:
+            uses[cat] += amt
+        elif amt < _ZERO:
+            drawdowns[cat] += -amt
+    if cash_change > _ZERO:
+        uses["Cash & Cash Equivalents"] += cash_change
+    elif cash_change < _ZERO:
+        drawdowns["Cash & Cash Equivalents"] += -cash_change
+
+    return PaycheckFlow(
+        earnings=_sorted_buckets(earn),
+        deductions=_sorted_buckets(ded),
+        employer=_sorted_buckets(employer),
+        take_home=take_home,
+        other_income=_sorted_buckets(other),
+        drawdowns=_sorted_buckets(drawdowns),
+        uses=_sorted_buckets(uses),
+    )
+
+
 async def compute_dashboard(
     db: AsyncSession,
-    year: Optional[int] = None,
-    period_id: Optional[uuid.UUID] = None,
-    from_period_id: Optional[uuid.UUID] = None,
-    to_period_id: Optional[uuid.UUID] = None,
+    year: int | None = None,
+    period_id: uuid.UUID | None = None,
+    from_period_id: uuid.UUID | None = None,
+    to_period_id: uuid.UUID | None = None,
 ) -> DashboardData:
     accounts_result = await db.scalars(select(Account))
     accounts: dict[int, Account] = {a.account_code: a for a in accounts_result.all()}
@@ -190,7 +418,6 @@ async def compute_dashboard(
     # was never formally closed). Without this, KPI totals like total_assets
     # show just the latest period's net change instead of the running balance.
     all_closed_periods = [p for p in all_periods if p.status == "closed"]
-    all_closed_ids = {p.period_id for p in all_closed_periods}
 
     closed_filter_periods = [p for p in periods if p.status == "closed"]
     filter_closed_ids = {p.period_id for p in closed_filter_periods}
@@ -212,7 +439,13 @@ async def compute_dashboard(
         bs_period_ids = bs_relevant_ids
 
     rows = await db.execute(
-        select(JournalLine, JournalEntry.period_id, JournalEntry.entry_id, JournalEntry.is_closing)
+        select(
+            JournalLine,
+            JournalEntry.period_id,
+            JournalEntry.entry_id,
+            JournalEntry.is_closing,
+            JournalEntry.source_type,
+        )
         .join(JournalEntry, JournalLine.entry_id == JournalEntry.entry_id)
     )
     all_rows = rows.all()
@@ -225,7 +458,8 @@ async def compute_dashboard(
     lines_operating: list[JournalLine] = []
     lines_operating_by_period: dict = defaultdict(list)
     lines_operating_by_entry: dict = defaultdict(list)
-    for line, pid, entry_id, is_closing in all_rows:
+    entry_source_type: dict = {}
+    for line, pid, entry_id, is_closing, source_type in all_rows:
         if pid in bs_relevant_ids:
             lines_bs_by_pid[pid].append(line)
         if pid in bs_period_ids:
@@ -234,6 +468,7 @@ async def compute_dashboard(
             lines_operating.append(line)
             lines_operating_by_period[pid].append(line)
             lines_operating_by_entry[entry_id].append(line)
+            entry_source_type[entry_id] = source_type
 
     # Income/Expense must exclude closing entries — closing entries zero out those
     # accounts by reversing them into equity, so including them cancels everything to zero.
@@ -249,6 +484,15 @@ async def compute_dashboard(
     net_worth = total_assets - total_liabilities
 
     cash_codes = {code for code, a in accounts.items() if a.account_type == "Asset" and "cash" in a.sub_category.lower()}
+    # Take-home lands in true spendable cash (checking/savings). Restricted cash
+    # (e.g. an HSA) also matches "cash" but is a pre-tax savings destination, not
+    # money you take home — exclude it so it counts as a paystub deduction instead.
+    spendable_cash_codes = frozenset(
+        code for code, a in accounts.items()
+        if a.account_type == "Asset"
+        and "cash" in a.sub_category.lower()
+        and "restricted" not in a.sub_category.lower()
+    )
     wc_codes = {code for code, a in accounts.items() if a.account_type == "Liability" and a.sub_category == "Credit Cards"}
     investing_bucket: dict[int, Decimal] = defaultdict(lambda: _ZERO)
     for entry_lines in lines_operating_by_entry.values():
@@ -296,7 +540,7 @@ async def compute_dashboard(
     # (web from/to range or no filter) they default to the most recent closed
     # year, matching the existing YTD-growth pattern on the frontend.
     if year is not None:
-        ytd_year: Optional[int] = year
+        ytd_year: int | None = year
     elif all_closed_periods:
         ytd_year = max(p.period_start.year for p in all_closed_periods)
     else:
@@ -305,7 +549,7 @@ async def compute_dashboard(
     if ytd_year is not None:
         ytd_period_ids = {p.period_id for p in all_closed_periods if p.period_start.year == ytd_year}
         ytd_lines_by_entry: dict = defaultdict(list)
-        for line, pid, entry_id, is_closing in all_rows:
+        for line, pid, entry_id, is_closing, _source_type in all_rows:
             if pid in ytd_period_ids and not is_closing:
                 ytd_lines_by_entry[entry_id].append(line)
         for entry_lines in ytd_lines_by_entry.values():
@@ -320,7 +564,7 @@ async def compute_dashboard(
         RetirementContributionPoint(
             account_code=code,
             account_name=accounts[code].account_name if code in accounts else str(code),
-            amount=float(ytd_contribs_by_code.get(code, _ZERO)),
+            amount=ytd_contribs_by_code.get(code, _ZERO),
         )
         for code in sorted(_RETIREMENT_CODES)
     ]
@@ -379,13 +623,13 @@ async def compute_dashboard(
         label = p.period_start.strftime("%b %Y")
         period_bars.append(PeriodBar(
             label=label,
-            income=float(p_income),
-            expenses=float(p_expenses),
-            net=float(p_income - p_expenses),
+            income=p_income,
+            expenses=p_expenses,
+            net=p_income - p_expenses,
         ))
         net_worth_series.append(NetWorthPoint(
             label=label,
-            net_worth=float(running_assets - running_liabilities),
+            net_worth=running_assets - running_liabilities,
         ))
 
         per_cat: dict[str, Decimal] = defaultdict(lambda: _ZERO)
@@ -399,7 +643,7 @@ async def compute_dashboard(
                 expense_category_series.append(ExpenseCategorySeriesPoint(
                     period_label=label,
                     category=cat,
-                    amount=float(amt),
+                    amount=amt,
                 ))
 
         for subcat, amt in running_assets_by_subcat.items():
@@ -407,14 +651,14 @@ async def compute_dashboard(
                 asset_series.append(AssetSeriesPoint(
                     period_label=label,
                     sub_category=subcat,
-                    amount=float(amt),
+                    amount=amt,
                 ))
         # Composition reflects the latest filter-scope period; overwritten each iteration.
         asset_composition_snapshot = dict(running_assets_by_subcat)
 
     asset_composition = sorted(
         [
-            AssetCompositionPoint(sub_category=k, amount=float(v))
+            AssetCompositionPoint(sub_category=k, amount=v)
             for k, v in asset_composition_snapshot.items()
             if v > _ZERO
         ],
@@ -430,6 +674,30 @@ async def compute_dashboard(
 
     top_expense_categories = _expense_by_subcategory(lines_operating, accounts)
 
+    # Sources and uses. Built from whole entries only (see _flow_entry_is_excluded)
+    # so the three lists balance; income is negated so it reads as a positive source.
+    flow_entries = [
+        (entry_source_type.get(eid, "manual"), entry_lines)
+        for eid, entry_lines in lines_operating_by_entry.items()
+        if not _flow_entry_is_excluded(entry_lines, accounts)
+    ]
+    lines_flow = [line for _source_type, entry_lines in flow_entries for line in entry_lines]
+    paycheck_flow = _paycheck_flow(flow_entries, accounts, spendable_cash_codes)
+    money_flow = MoneyFlow(
+        # Negated (income is credit-normal, so debit − credit is negative), which
+        # also reverses _flow_buckets' ordering — re-sort so the largest leads.
+        income=sorted(
+            [
+                MoneyFlowBucket(label=b.label, amount=-b.amount)
+                for b in _flow_buckets(lines_flow, accounts, ("Income",))
+            ],
+            key=lambda b: b.amount,
+            reverse=True,
+        ),
+        expenses=_flow_buckets(lines_flow, accounts, ("Expense",)),
+        fund_flows=_flow_buckets(lines_flow, accounts, ("Asset", "Liability")),
+    )
+
     recent_result = await db.execute(
         select(JournalEntry, Period.period_start)
         .join(Period, JournalEntry.period_id == Period.period_id)
@@ -440,13 +708,13 @@ async def compute_dashboard(
     period_labels: dict = {p.period_id: p.period_start.strftime("%b %Y") for p in all_closed_periods}
 
     lines_by_entry: dict = defaultdict(list)
-    for line, period_id, entry_id, _is_closing in all_rows:
+    for line, _period_id, entry_id, _is_closing, _source_type in all_rows:
         lines_by_entry[entry_id].append(line)
 
     recent_entries: list[RecentEntry] = []
-    for entry, period_start in recent_result.all():
+    for entry, _period_start in recent_result.all():
         entry_lines = lines_by_entry.get(entry.entry_id, [])
-        total_debit = float(sum(ln.debit_amount for ln in entry_lines))
+        total_debit = sum((ln.debit_amount for ln in entry_lines), start=_ZERO)
         recent_entries.append(RecentEntry(
             description=entry.description,
             entry_date=entry.entry_date.strftime("%Y-%m-%d"),
@@ -473,6 +741,8 @@ async def compute_dashboard(
         period_bars=period_bars,
         net_worth_series=net_worth_series,
         top_expense_categories=top_expense_categories,
+        money_flow=money_flow,
+        paycheck_flow=paycheck_flow,
         expense_category_series=expense_category_series,
         asset_composition=asset_composition,
         asset_series=asset_series,

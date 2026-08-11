@@ -7,9 +7,9 @@ render sectioned statements (e.g. Current Assets vs Long-Term Assets).
 """
 
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Iterable, Optional
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -142,7 +142,7 @@ async def _load_accounts(db: AsyncSession) -> dict[int, Account]:
 
 async def _load_lines(
     db: AsyncSession,
-    period_ids: Optional[list[UUID]],
+    period_ids: list[UUID] | None,
     exclude_closing: bool = False,
 ) -> list[JournalLine]:
     """Load all journal lines from entries in the given periods (None = all)."""
@@ -159,7 +159,7 @@ async def _load_lines(
     return list(result.all())
 
 
-async def _closed_period_ids(db: AsyncSession, year: Optional[int] = None) -> list[UUID]:
+async def _closed_period_ids(db: AsyncSession, year: int | None = None) -> list[UUID]:
     stmt = select(Period).where(Period.status == "closed")
     result = await db.scalars(stmt)
     periods = result.all()
@@ -231,7 +231,7 @@ def _group_by_subcategory(
 
 async def compute_balance_sheet(
     db: AsyncSession,
-    period_ids: Optional[list[UUID]],
+    period_ids: list[UUID] | None,
     as_of_label: str,
 ) -> BalanceSheet:
     """Cumulative balances of permanent accounts through the given periods."""
@@ -290,9 +290,9 @@ def _partition_oci(
 
 async def compute_income_statement(
     db: AsyncSession,
-    period_ids: Optional[list[UUID]],
+    period_ids: list[UUID] | None,
     range_label: str,
-    year: Optional[int] = None,
+    year: int | None = None,
 ) -> IncomeStatement:
     """Income and expenses for the given periods (or closed periods in `year`,
     or all closed periods if both are None).
@@ -415,7 +415,9 @@ async def compute_balance_sheet_pivot(db: AsyncSession) -> BalanceSheetPivot:
         grand_totals: list[Decimal] = [_ZERO] * n
         sections: list[BalanceSheetPivotSection] = []
 
-        for sub_label in sorted(by_sub.keys(), key=lambda l: _section_sort_key(account_type, l)):
+        for sub_label in sorted(
+            by_sub.keys(), key=lambda label: _section_sort_key(account_type, label)
+        ):
             rows: list[BalanceSheetPivotRow] = []
             sub_totals: list[Decimal] = [_ZERO] * n
 
@@ -564,9 +566,9 @@ def _is_working_capital_account(acct: Account) -> bool:
 
 async def compute_cashflow(
     db: AsyncSession,
-    period_ids: Optional[list[UUID]],
+    period_ids: list[UUID] | None,
     range_label: str,
-    year: Optional[int] = None,
+    year: int | None = None,
 ) -> CashflowStatement:
     """Indirect-method cash flow for the given periods (or closed periods in
     `year`, or all closed periods since inception if both are None).

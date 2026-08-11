@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Chart } from 'chart.js'
 import EmptyState from '../../components/EmptyState'
 import SvgIcon from '../../components/SvgIcon'
-import Sparkline from '../../components/Sparkline'
+import HeroSparkline from '../../components/HeroSparkline'
 import RingChart from '../../components/RingChart'
 import { fetchCashflow } from '../../api/statements'
 import { fetchPeriods } from '../../api/periods'
 import { fmtMoney, fmtPeriod } from '../../utils/format'
-import { getChartPalette, moneyTick } from './chartTheme'
+import { CATEGORICAL_VARS, categoricalColors, getChartPalette, moneyTick } from './chartTheme'
 import type { DashboardTabProps } from './constants'
 
 interface AssetsTabProps extends DashboardTabProps {
@@ -46,20 +46,34 @@ export default function AssetsTab({ data, scopeLabel, selectedYear }: AssetsTabP
   const cfError = periodsQ.error || cfQs.some((q) => q.error)
   const cfResponses = cfQs.map((q) => q.data).filter((r): r is NonNullable<typeof r> => !!r)
 
-  const cf = cfResponses.length ? {
-    beginning_cash: cfResponses[0].beginning_cash,
-    ending_cash: cfResponses[cfResponses.length - 1].ending_cash,
-    operating_total: String(cfResponses.reduce((s, r) => s + parseFloat(r.operating_total), 0)),
-    investing_total: String(cfResponses.reduce((s, r) => s + parseFloat(r.investing_total), 0)),
-    financing_total: String(cfResponses.reduce((s, r) => s + parseFloat(r.financing_total), 0)),
-    net_change_in_cash: String(cfResponses.reduce((s, r) => s + parseFloat(r.net_change_in_cash), 0)),
-  } : null
+  // `cfResponses` is a fresh array on every render, so memoizing on it directly
+  // would never hit. Key off the queries' last-updated stamps instead: they only
+  // change when the underlying data actually does. Without this, `cf` is a new
+  // object each render and the chart effect below tears down and redraws on
+  // every parent re-render.
+  const cfFingerprint = cfQs.map((q) => q.dataUpdatedAt).join(',')
+  const cf = useMemo(
+    () =>
+      cfResponses.length
+        ? {
+            beginning_cash: cfResponses[0].beginning_cash,
+            ending_cash: cfResponses[cfResponses.length - 1].ending_cash,
+            operating_total: String(cfResponses.reduce((s, r) => s + parseFloat(r.operating_total), 0)),
+            investing_total: String(cfResponses.reduce((s, r) => s + parseFloat(r.investing_total), 0)),
+            financing_total: String(cfResponses.reduce((s, r) => s + parseFloat(r.financing_total), 0)),
+            net_change_in_cash: String(
+              cfResponses.reduce((s, r) => s + parseFloat(r.net_change_in_cash), 0),
+            ),
+          }
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see note above.
+    [cfFingerprint],
+  )
 
   useEffect(() => {
     if (!assetStackRef.current || !data.asset_series.length) return
     const palette = getChartPalette()
-    const { green, accent, amber, purple, pink } = palette
-    const catColors = [accent, green, amber, purple, '#38bdf8', pink, '#fb923c', '#34d399']
+    const catColors = categoricalColors(palette)
     const periodLabels = [...new Set(data.asset_series.map((p) => p.period_label))]
     const subCategories = [...new Set(data.asset_series.map((p) => p.sub_category))]
     if (!periodLabels.length || !subCategories.length) return
@@ -128,7 +142,7 @@ export default function AssetsTab({ data, scopeLabel, selectedYear }: AssetsTabP
 
   const composition = data.asset_composition
   const totalAssets = parseFloat(data.total_assets)
-  const assetColors = ['var(--accent)', 'var(--green)', 'var(--amber)', 'var(--purple)', '#38bdf8', 'var(--pink)', '#fb923c', '#34d399']
+  const assetColors = CATEGORICAL_VARS
   const ringData = composition.slice(0, 6).map((d, i) => ({ amount: parseFloat(d.amount), color: assetColors[i % assetColors.length], name: d.sub_category }))
 
   const totalAssetsCurr = parseFloat(data.total_assets)
@@ -176,7 +190,7 @@ export default function AssetsTab({ data, scopeLabel, selectedYear }: AssetsTabP
           </div>
         </div>
         <div style={{ alignSelf: 'stretch', display: 'flex', flexDirection: 'column' }}>
-          <Sparkline data={assetTotals.length ? assetTotals : [totalAssetsCurr]} labels={periodLabels.length ? periodLabels : undefined} showAxes fillContainer color="white" fill="rgba(255,255,255,0.22)" strokeWidth={2.2} />
+          <HeroSparkline data={assetTotals.length ? assetTotals : [totalAssetsCurr]} labels={periodLabels.length ? periodLabels : undefined} />
         </div>
       </div>
       <div className="grid grid-12">

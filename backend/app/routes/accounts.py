@@ -21,19 +21,19 @@ async def list_accounts(
     include_inactive: bool = Query(
         default=False, description="Include archived (is_active=False) accounts."
     ),
-) -> list[Account]:
+) -> list[AccountRead]:
     stmt = select(Account).order_by(Account.account_code)
     if not include_inactive:
         stmt = stmt.where(Account.is_active.is_(True))
     result = await db.scalars(stmt)
-    return list(result.all())
+    return [AccountRead.model_validate(a) for a in result.all()]
 
 
 @router.post("/accounts", response_model=AccountRead, status_code=status.HTTP_201_CREATED)
 async def create_account(
     body: AccountCreate,
     db: AsyncSession = Depends(get_db_session),
-) -> Account:
+) -> AccountRead:
     if await db.get(Account, body.account_code) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -44,7 +44,7 @@ async def create_account(
     await db.commit()
     await db.refresh(account)
     logger.info("Created account %d (%s)", account.account_code, account.account_name)
-    return account
+    return AccountRead.model_validate(account)
 
 
 @router.patch("/accounts/{account_code}", response_model=AccountRead)
@@ -52,7 +52,7 @@ async def update_account(
     account_code: int,
     body: AccountUpdate,
     db: AsyncSession = Depends(get_db_session),
-) -> Account:
+) -> AccountRead:
     account = await db.get(Account, account_code)
     if account is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
@@ -80,4 +80,4 @@ async def update_account(
     await db.commit()
     await db.refresh(account)
     logger.info("Updated account %d: %s", account_code, ", ".join(updates) or "(no changes)")
-    return account
+    return AccountRead.model_validate(account)

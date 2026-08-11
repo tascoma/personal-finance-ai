@@ -5,16 +5,15 @@ Revises: a3e1f2c8d501
 Create Date: 2026-05-16 00:00:00.000000
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
 revision: str = "b1f2a3c4d5e6"
-down_revision: Union[str, Sequence[str], None] = "a3e1f2c8d501"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "a3e1f2c8d501"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 NEW_TYPES = (

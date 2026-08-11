@@ -3,10 +3,12 @@ import { useQuery } from '@tanstack/react-query'
 import { Chart } from 'chart.js'
 import EmptyState from '../../components/EmptyState'
 import SvgIcon from '../../components/SvgIcon'
+import SankeyChart from '../../components/SankeyChart'
 import { fetchDashboard } from '../../api/dashboard'
 import { fetchCashflow } from '../../api/statements'
 import { fmtMoney, fmtPeriod } from '../../utils/format'
-import { getChartPalette, moneyTick } from './chartTheme'
+import { categoricalColors, getChartPalette, moneyTick } from './chartTheme'
+import { buildIncomeStatementSankey, SANKEY_COLORS } from './sankeyData'
 import type { Period } from '../../types'
 
 interface PeriodTabProps {
@@ -56,7 +58,7 @@ export default function PeriodTab({ periods, periodId }: PeriodTabProps) {
     const categories = currentQ.data?.top_expense_categories ?? []
     if (!spendChartRef.current || !categories.length) return
     const palette = getChartPalette()
-    const catColors = [palette.accent, palette.green, palette.amber, palette.purple, '#38bdf8', palette.pink, '#fb923c', '#34d399']
+    const catColors = categoricalColors(palette)
     const chart = new Chart(spendChartRef.current, {
       type: 'bar',
       data: {
@@ -309,6 +311,25 @@ export default function PeriodTab({ periods, periodId }: PeriodTabProps) {
           ) : <EmptyState message="No expenses recorded this period." />}
         </div>
       </div>
+
+      {(() => {
+        const sankey = buildIncomeStatementSankey(curr.money_flow, SANKEY_COLORS)
+        return (
+          <div className="card mb-4">
+            <div className="card-hd">
+              <div>
+                <div className="card-title">Money Flow</div>
+                <div className="card-sub">{selectedPeriod ? fmtPeriod(selectedPeriod.period_start) : ''}</div>
+              </div>
+            </div>
+            <div className="card-bd">
+              {sankey.nodes.length ? (
+                <SankeyChart model={sankey} />
+              ) : <EmptyState message="No income or expenses recorded this period." />}
+            </div>
+          </div>
+        )
+      })()}
 
       <div className="card">
         <div className="card-hd"><div className="card-title">Insights</div></div>

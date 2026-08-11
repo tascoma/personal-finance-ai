@@ -22,9 +22,9 @@ Paystub transactions:
 
 import logging
 import uuid
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
-from typing import Sequence
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession

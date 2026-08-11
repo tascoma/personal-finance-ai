@@ -1,7 +1,12 @@
 # syntax=docker/dockerfile:1.7
 
 # ─── Stage 1: build the React frontend ─────────────────────────────────────
-FROM node:20-alpine AS frontend-build
+# node:24 for npm 11. `npm ci` requires the lockfile to have been written by a
+# compatible npm major: npm 11 records vitest's nested vite/esbuild tree in a
+# form npm 10 reports as "Missing: esbuild@... from lock file", which fails the
+# build. node:20 (npm 10.8) and node:22 (npm 10.9) both reject the current lock.
+# Node 20 is also past EOL as of April 2026.
+FROM node:24-alpine AS frontend-build
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci

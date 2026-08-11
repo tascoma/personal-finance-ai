@@ -1,6 +1,5 @@
 import logging
 import uuid
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db_session
 from app.schemas.api_responses import (
     BalanceSheetPivotResponse,
-    BalanceSheetPivotSectionSchema,
     BalanceSheetPivotRowSchema,
+    BalanceSheetPivotSectionSchema,
     CashflowStatementResponse,
     IncomeStatementResponse,
     StatementLineSchema,
@@ -59,8 +58,8 @@ async def get_balance_sheet_pivot(
 
 @router.get("/statements/income", response_model=IncomeStatementResponse)
 async def get_income_statement(
-    period_id: Optional[uuid.UUID] = Query(None),
-    year: Optional[int] = Query(None),
+    period_id: uuid.UUID | None = Query(None),
+    year: int | None = Query(None),
     db: AsyncSession = Depends(get_db_session),
 ) -> IncomeStatementResponse:
     period_ids = [period_id] if period_id else None
@@ -102,8 +101,8 @@ async def get_income_statement(
 
 @router.get("/statements/cashflow", response_model=CashflowStatementResponse)
 async def get_cashflow_statement(
-    period_id: Optional[uuid.UUID] = Query(None),
-    year: Optional[int] = Query(None),
+    period_id: uuid.UUID | None = Query(None),
+    year: int | None = Query(None),
     db: AsyncSession = Depends(get_db_session),
 ) -> CashflowStatementResponse:
     period_ids = [period_id] if period_id else None

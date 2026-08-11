@@ -3,7 +3,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, field_validator
 
-
 # bcrypt only consumes the first 72 bytes of a password and raises on longer
 # input, so bound the password here rather than letting it 500 at the hash call.
 _BCRYPT_MAX_BYTES = 72

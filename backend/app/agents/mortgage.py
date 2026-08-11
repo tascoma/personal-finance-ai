@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
@@ -40,11 +41,11 @@ SYSTEM_PROMPT = (
 
 class ExtractedMortgage(BaseModel):
     payment_date: date
-    principal: float
-    interest: float
-    escrow: float = Field(description="The total escrow amount, which may include both property tax and home insurance. ")
-    property_tax: float = Field(description="When property tax is payed out of the escrow account")
-    home_insurance: float = Field(description="When home insurance is payed out of the escrow account")
+    principal: Decimal
+    interest: Decimal
+    escrow: Decimal = Field(description="The total escrow amount, which may include both property tax and home insurance. ")
+    property_tax: Decimal = Field(description="When property tax is payed out of the escrow account")
+    home_insurance: Decimal = Field(description="When home insurance is payed out of the escrow account")
 
 
 agent = build_agent(ExtractedMortgage, SYSTEM_PROMPT)

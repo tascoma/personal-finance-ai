@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy import delete, select
@@ -159,7 +159,7 @@ async def register_device_token(
     or relaunch); we upsert and re-bind to the current user if needed, and
     bump `last_seen_at`.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     existing = (
         await db.execute(select(DeviceToken).where(DeviceToken.apns_token == body.apns_token))
     ).scalar_one_or_none()

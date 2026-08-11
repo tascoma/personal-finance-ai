@@ -8,10 +8,9 @@ instance this app runs on. A multi-instance deployment would need a shared backe
 (e.g. Redis via the `storage_uri` argument).
 """
 
-from starlette.requests import Request
-
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from starlette.requests import Request
 
 limiter = Limiter(key_func=get_remote_address)
 

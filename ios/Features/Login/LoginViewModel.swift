@@ -14,19 +14,25 @@ final class LoginViewModel {
 
     private enum Keys {
         static let email = "saved_email"
-        static let password = "saved_password"
+        /// Retained only so sign-out can evict passwords written by builds that
+        /// used to persist them. Nothing writes this key any more.
+        static let legacyPassword = "saved_password"
     }
 
     init(api: APIClient, auth: AuthStore) {
         self.api = api
         self.auth = auth
         self.email = KeychainBridge.string(forKey: Keys.email) ?? ""
-        self.password = KeychainBridge.string(forKey: Keys.password) ?? ""
+        // The password is deliberately not restored. Session resumption is the
+        // refresh cookie's job (see RootView.beginBootstrap), and prefilling a
+        // SecureField meant a device whose owner declined Face ID — the default —
+        // opened straight to a filled password and a live Sign In button.
+        KeychainBridge.delete(forKey: Keys.legacyPassword)
     }
 
     static func clearSavedCredentials() {
         KeychainBridge.delete(forKey: Keys.email)
-        KeychainBridge.delete(forKey: Keys.password)
+        KeychainBridge.delete(forKey: Keys.legacyPassword)
     }
 
     var canSubmit: Bool {
@@ -45,7 +51,6 @@ final class LoginViewModel {
                 as: TokenResponse.self
             )
             KeychainBridge.setString(email, forKey: Keys.email)
-            KeychainBridge.setString(password, forKey: Keys.password)
             auth.setSession(token: token.accessToken)
             let user = try await api.perform(.me, as: User.self)
             auth.currentUser = user

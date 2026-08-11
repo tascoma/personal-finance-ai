@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 from jose import JWTError, jwt
@@ -29,7 +29,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def _make_token(data: dict, expires_delta: timedelta) -> str:
     payload = data.copy()
-    payload["exp"] = datetime.now(timezone.utc) + expires_delta
+    payload["exp"] = datetime.now(UTC) + expires_delta
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 

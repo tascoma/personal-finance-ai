@@ -4,13 +4,6 @@ import Observation
 @MainActor
 @Observable
 final class StatementsViewModel {
-    enum LoadState<T: Equatable>: Equatable {
-        case idle
-        case loading
-        case loaded(T)
-        case error(String)
-    }
-
     enum Tab: String, CaseIterable, Identifiable {
         case balanceSheet = "Balance"
         case income = "Income"
@@ -53,8 +46,12 @@ final class StatementsViewModel {
     func loadPeriods() async {
         do {
             let periods = try await api.perform(.periods, as: [Period].self)
-            closedPeriods = periods.filter(\.isClosed).sorted { $0.periodStart < $1.periodStart }
-            if selectedPeriodId == nil, let latest = closedPeriods.last {
+            // Newest-first, matching PeriodTabViewModel, AssetCashflowViewModel
+            // and the web app. This list feeds the same PeriodPicker as those
+            // two, so sorting ascending here meant the picker listed periods in
+            // the opposite order depending on which tab you opened it from.
+            closedPeriods = periods.filter(\.isClosed).sorted { $0.periodStart > $1.periodStart }
+            if selectedPeriodId == nil, let latest = closedPeriods.first {
                 selectedPeriodId = latest.periodId
             }
             periodsError = nil

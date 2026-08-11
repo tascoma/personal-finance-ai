@@ -50,6 +50,7 @@ final class DashboardViewModel {
     /// instant. Closed-period data is stable within a session; pull-to-refresh
     /// clears this.
     private var cache: [YearFilter: DashboardResponse] = [:]
+    private var prefetchTask: Task<Void, Never>?
 
     init(api: APIClient) {
         self.api = api
@@ -112,6 +113,13 @@ final class DashboardViewModel {
     }
 
     func refresh() async {
+        // Cancel first: the in-flight prefetch writes into `cache` as each
+        // response lands, so clearing the cache without stopping it let a
+        // pre-refresh response repopulate the just-cleared entry. Switching to
+        // that year afterwards then showed stale data with no way to clear it
+        // short of another refresh.
+        prefetchTask?.cancel()
+        prefetchTask = nil
         cache.removeAll()
         await loadPeriods()
         await fetchAndShow(selectedFilter, updateWidget: true)
@@ -154,10 +162,13 @@ final class DashboardViewModel {
     /// Warm the cache for every other filter option in the background.
     private func prefetchOthers() {
         let options = filterOptions
-        Task { [weak self] in
+        prefetchTask?.cancel()
+        prefetchTask = Task { [weak self] in
             guard let self else { return }
             for option in options where self.cache[option] == nil {
+                if Task.isCancelled { return }
                 if let response = try? await self.fetch(option) {
+                    guard !Task.isCancelled else { return }
                     self.cache[option] = response
                 }
             }

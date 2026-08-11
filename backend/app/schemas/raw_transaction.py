@@ -1,7 +1,6 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
 
 from pydantic import BaseModel
 
@@ -13,13 +12,13 @@ class RawTransactionRead(BaseModel):
     txn_date: date
     description: str
     amount: Decimal
-    suggested_account_code: Optional[int]
-    classifier_confidence: Optional[Decimal]
+    suggested_account_code: int | None
+    classifier_confidence: Decimal | None
     is_flagged: bool
     is_duplicate: bool
-    dedup_hash: Optional[str]
+    dedup_hash: str | None
     status: str
-    journal_entry_id: Optional[uuid.UUID]
+    journal_entry_id: uuid.UUID | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom'
 import { Chart } from 'chart.js'
 import EmptyState from '../../components/EmptyState'
 import SvgIcon from '../../components/SvgIcon'
-import Sparkline from '../../components/Sparkline'
+import HeroSparkline from '../../components/HeroSparkline'
 import RingChart from '../../components/RingChart'
+import SankeyChart from '../../components/SankeyChart'
 import { fmtMoney } from '../../utils/format'
-import { applyChartDefaults, getChartPalette, moneyTick, moneyTip } from './chartTheme'
+import { CATEGORICAL_VARS, getChartPalette, moneyTick, moneyTip } from './chartTheme'
+import { buildIncomeStatementSankey, SANKEY_COLORS } from './sankeyData'
 import { TARGET_YEAR, type DashboardTabProps } from './constants'
 
 const CONTRIB_LIMIT_401K = 24_500
@@ -28,7 +30,6 @@ export default function OverviewTab({ data, scopeLabel }: DashboardTabProps) {
   useEffect(() => {
     if (!ieRef.current || !data.period_bars.length) return
     const palette = getChartPalette()
-    applyChartDefaults(palette)
     const { green, red } = palette
     const chart = new Chart(ieRef.current, {
       type: 'bar',
@@ -62,7 +63,7 @@ export default function OverviewTab({ data, scopeLabel }: DashboardTabProps) {
   // Asset composition for ring chart
   const composition = data.asset_composition
   const totalAssets = parseFloat(data.total_assets)
-  const assetColors = ['var(--accent)', 'var(--green)', 'var(--amber)', 'var(--purple)', '#38bdf8', 'var(--pink)', '#fb923c', '#34d399']
+  const assetColors = CATEGORICAL_VARS
   const ringData = composition.slice(0, 6).map((d, i) => ({ amount: parseFloat(d.amount), color: assetColors[i % assetColors.length], name: d.sub_category }))
 
   const retirementContribs = data.ytd_retirement_contributions ?? []
@@ -102,7 +103,7 @@ export default function OverviewTab({ data, scopeLabel }: DashboardTabProps) {
             </div>
           </div>
           <div style={{ alignSelf: 'stretch', display: 'flex', flexDirection: 'column' }}>
-            <Sparkline data={nwSeries} labels={nwLabels} showAxes fillContainer color="white" fill="rgba(255,255,255,0.22)" strokeWidth={2.2} />
+            <HeroSparkline data={nwSeries} labels={nwLabels} />
           </div>
         </div>
       )}
@@ -265,6 +266,23 @@ export default function OverviewTab({ data, scopeLabel }: DashboardTabProps) {
           )
         })()}
       </div>
+
+      {/* Money flow */}
+      {(() => {
+        const sankey = buildIncomeStatementSankey(data.money_flow, SANKEY_COLORS)
+        return (
+          <div className="card mb-4">
+            <div className="card-hd">
+              <div><div className="card-title">Money Flow</div><div className="card-sub">{scopeLabel}</div></div>
+            </div>
+            <div className="card-bd">
+              {sankey.nodes.length ? (
+                <SankeyChart model={sankey} />
+              ) : <EmptyState message="No income or expenses recorded yet." />}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Top categories + Recent activity */}
       <div className="grid grid-12">

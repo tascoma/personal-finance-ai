@@ -2,31 +2,16 @@
 
 import uuid
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.databases import Base
 from app.dependencies import get_db_session
 from app.main import app
 from app.models.device_token import DeviceToken
 from app.services import apns as apns_service
 
-TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
-
 REGISTER_PAYLOAD = {"email": "tester@example.com", "password": "securepassword"}
-
-
-@pytest_asyncio.fixture
-async def session_factory():
-    eng = create_async_engine(TEST_DB_URL, echo=False)
-    async with eng.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    factory = async_sessionmaker(eng, expire_on_commit=False)
-    yield factory
-    await eng.dispose()
 
 
 @pytest_asyncio.fixture
@@ -46,7 +31,6 @@ async def auth_client(session_factory):
     app.dependency_overrides.clear()
 
 
-@pytest.mark.asyncio
 async def test_register_device_token_creates_row(auth_client: AsyncClient, session_factory):
     payload = {
         "apns_token": "a" * 64,
@@ -64,7 +48,6 @@ async def test_register_device_token_creates_row(auth_client: AsyncClient, sessi
     assert rows[0].apns_token == payload["apns_token"]
 
 
-@pytest.mark.asyncio
 async def test_register_device_token_upserts_existing(auth_client: AsyncClient, session_factory):
     token = "b" * 64
     await auth_client.post(
@@ -83,7 +66,6 @@ async def test_register_device_token_upserts_existing(auth_client: AsyncClient, 
     assert rows[0].bundle_id == "com.tascoma.personalfinanceai.beta"
 
 
-@pytest.mark.asyncio
 async def test_register_device_token_requires_auth(session_factory):
     async def override_get_db_session():
         async with session_factory() as session:
@@ -100,7 +82,6 @@ async def test_register_device_token_requires_auth(session_factory):
     assert resp.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_delete_device_token(auth_client: AsyncClient, session_factory):
     token = "c" * 64
     await auth_client.post(
@@ -115,13 +96,11 @@ async def test_delete_device_token(auth_client: AsyncClient, session_factory):
     assert rows == []
 
 
-@pytest.mark.asyncio
 async def test_delete_unknown_token_is_idempotent(auth_client: AsyncClient):
     resp = await auth_client.delete("/api/v1/auth/device-tokens/" + "d" * 64)
     assert resp.status_code == 204
 
 
-@pytest.mark.asyncio
 async def test_apns_noop_without_credentials(session_factory):
     """notify_user() returns 0 and writes nothing when APNs creds are unset."""
     async with session_factory() as session:

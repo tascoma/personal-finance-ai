@@ -8,11 +8,12 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db_session
+from app.agents._base import AgentError
+from app.dependencies import get_current_user, get_db_session, get_period_or_404
 from app.models.account import Account
+from app.models.period import Period
 from app.models.raw_transaction import RawTransaction
 from app.models.user import User
-from app.services import apns as apns_service
 from app.schemas.account import AccountRead
 from app.schemas.api_responses import (
     OperationResult,
@@ -24,7 +25,7 @@ from app.schemas.api_responses import (
 from app.schemas.document import DocumentRead
 from app.schemas.orchestrate import OrchestrationResult
 from app.schemas.period import PeriodCreate, PeriodRead
-from app.agents._base import AgentError
+from app.services import apns as apns_service
 from app.services import document as document_service
 from app.services import orchestrate as orchestrate_service
 from app.services import parse as parse_service
@@ -62,12 +63,9 @@ async def create_period(
 @router.get("/periods/{period_id}", response_model=PeriodDetailResponse)
 async def get_period_detail(
     period_id: uuid.UUID,
+    period: Period = Depends(get_period_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> PeriodDetailResponse:
-    period = await period_service.get_period(db, period_id)
-    if period is None:
-        raise HTTPException(status_code=404, detail="Period not found")
-
     documents = await document_service.list_documents(db, period_id)
 
     accounts_result = await db.scalars(
@@ -150,8 +148,7 @@ async def update_period_status(
     # wait on APNs latency.
     if body.new_status == "pending_close":
         background_tasks.add_task(
-            apns_service.notify_user,
-            db,
+            apns_service.notify_user_background,
             current_user.user_id,
             title="Ready to close",
             body=f"Period {period.period_start:%b %Y} is ready to close.",
@@ -222,11 +219,11 @@ async def orchestrate_parse_documents(
     except AgentError as exc:
         logger.exception("Orchestrator agent failed for period %s", period_id)
         raise HTTPException(status_code=502, detail="Orchestration agent failed") from exc
-    except Exception:
+    except Exception as exc:
         logger.exception("Unexpected error orchestrating period %s", period_id)
         raise HTTPException(
             status_code=500, detail="Unexpected error during orchestration"
-        )
+        ) from exc
     logger.info(
         "Orchestrated parse for period %s: %d parsed, %d failed, %d need review, classifier_ran=%s",
         period_id,
@@ -270,8 +267,10 @@ async def upsert_balances(
             continue
         try:
             batch[item.account_code] = Decimal(item.stated_balance)
-        except InvalidOperation:
-            raise HTTPException(status_code=400, detail=f"Invalid balance for account {item.account_code}")
+        except InvalidOperation as exc:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid balance for account {item.account_code}"
+            ) from exc
     try:
         count = await stated_balance_service.upsert_balances_batch(db, period_id, batch)
     except stated_balance_service.BalanceError as exc:

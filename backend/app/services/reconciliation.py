@@ -10,6 +10,7 @@ adjusting entry rather than treating the gap as a bookkeeping error.
 import logging
 import uuid
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,10 @@ from app.models.reconciliation import Reconciliation
 from app.models.stated_balance import StatedBalance
 from app.schemas.reconciliation import EquityRollupPreview, TempAccountLine, TempAccountPreview
 from app.services import journal as journal_service
+from app.services.scrub import scrub_descriptions_for_prompt
+
+if TYPE_CHECKING:
+    from app.agents.reconciliation import AccountGap
 
 logger = logging.getLogger(__name__)
 
@@ -663,3 +668,56 @@ async def post_equity_rollup(
         period_id, balance,
     )
     return entry
+
+
+async def build_account_gaps(db: AsyncSession, period: Period) -> list["AccountGap"]:
+    """Collect the reconciliation gaps worth sending to the analysis agent.
+
+    Lives here rather than in the route so the PII scrub travels with the data:
+    this is the only agent whose prompt is assembled from user-supplied journal
+    text, and the scrub was previously applied in the route handler, so a second
+    caller of `run_reconciliation_agent` would have bypassed it entirely.
+    """
+    from app.agents.reconciliation import AccountGap
+
+    recon_rows = await db.scalars(
+        select(Reconciliation).where(Reconciliation.period_id == period.period_id)
+    )
+    balances = await compute_account_balances(db, period)
+
+    gaps: list[AccountGap] = []
+    for row in recon_rows.all():
+        info = balances.get(row.account_code, {})
+        if row.gap == 0 or info.get("is_investment", False):
+            continue
+
+        recent = await db.scalars(
+            select(JournalEntry.description)
+            .join(JournalLine, JournalLine.entry_id == JournalEntry.entry_id)
+            .where(
+                JournalEntry.period_id == period.period_id,
+                JournalLine.account_code == row.account_code,
+            )
+            .order_by(JournalEntry.entry_date.desc())
+            .limit(5)
+        )
+        account_name = info.get("account_name", "")
+        # Descriptions derive from statement text and carry the same
+        # identifiers. The account name is a keep_term: it comes from the chart
+        # of accounts, and the agent needs it to reason about the gap.
+        descriptions = scrub_descriptions_for_prompt(
+            list(recent.all()),
+            keep_terms=[account_name],
+            context="reconciliation gap analysis",
+        )
+        gaps.append(
+            AccountGap(
+                account_code=row.account_code,
+                account_name=account_name,
+                computed_balance=row.computed_balance,
+                stated_balance=row.stated_balance,
+                gap=row.gap,
+                recent_entry_descriptions=descriptions,
+            )
+        )
+    return gaps

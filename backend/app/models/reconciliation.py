@@ -2,7 +2,16 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Computed, DateTime, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy import (
+    CheckConstraint,
+    Computed,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.databases import Base

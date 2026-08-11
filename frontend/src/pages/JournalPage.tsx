@@ -18,10 +18,11 @@ import PeriodStepper from '../components/PeriodStepper'
 import WorkflowHint from '../components/WorkflowHint'
 import Banner from '../components/Banner'
 import EmptyState from '../components/EmptyState'
+import Tabs from '../components/Tabs'
 import ConfidencePill from '../components/ConfidencePill'
 import SvgIcon from '../components/SvgIcon'
 import { useConfirm } from '../hooks/useConfirm'
-import { fmtPeriod, fmtStatus, fmtDebitCredit } from '../utils/format'
+import { fmtDebitCredit, fmtMoney, fmtPeriod, fmtStatus } from '../utils/format'
 import type { JournalLineCreate, JournalPageResponse, RawTransaction } from '../types'
 
 type Tab = 'staged' | 'approved' | 'posted'
@@ -173,17 +174,15 @@ export default function JournalPage({ embedded, periodId: propPeriodId }: Props)
         <div className="kpi"><div className="kpi-label">Posted</div><div className="kpi-value">{entries.length}</div><div className="kpi-sub">this period</div></div>
       </div>
 
-      <div className="tabs">
-        <button className={`tab${activeTab === 'staged' ? ' active' : ''}`} onClick={() => setActiveTab('staged')}>
-          To review · <span className="mono">{staged.length}</span>
-        </button>
-        <button className={`tab${activeTab === 'approved' ? ' active' : ''}`} onClick={() => setActiveTab('approved')}>
-          Approved · <span className="mono">{approved.length}</span>
-        </button>
-        <button className={`tab${activeTab === 'posted' ? ' active' : ''}`} onClick={() => setActiveTab('posted')}>
-          Posted · <span className="mono">{entries.length}</span>
-        </button>
-      </div>
+      <Tabs
+        active={activeTab}
+        onChange={(k) => setActiveTab(k as typeof activeTab)}
+        tabs={[
+          { key: 'staged', label: 'To review', count: staged.length },
+          { key: 'approved', label: 'Approved', count: approved.length },
+          { key: 'posted', label: 'Posted', count: entries.length },
+        ]}
+      />
 
       {/* Staged tab */}
       {activeTab === 'staged' && (
@@ -252,7 +251,7 @@ export default function JournalPage({ embedded, periodId: propPeriodId }: Props)
                         </td>
                         <td><ConfidencePill confidence={txn.classifier_confidence} /></td>
                         <td className="mono text-right" style={{ color: n < 0 ? 'var(--red)' : 'var(--green)' }}>
-                          {n < 0 ? `−$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`}
+                          {fmtMoney(n)}
                         </td>
                         <td className="text-right">
                           {canEdit ? (
@@ -305,7 +304,7 @@ export default function JournalPage({ embedded, periodId: propPeriodId }: Props)
                         <td><span className="badge badge--ghost">{txn.suggested_account_code ? `${txn.suggested_account_code}${acct ? ` · ${acct.account_name}` : ''}` : '—'}</span></td>
                         <td><ConfidencePill confidence={txn.classifier_confidence} /></td>
                         <td className="mono text-right" style={{ color: n < 0 ? 'var(--red)' : 'var(--green)' }}>
-                          {n < 0 ? `−$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`}
+                          {fmtMoney(n)}
                         </td>
                         {canEdit && <td><button className="btn btn-ghost btn-sm" onClick={() => unapprove.mutate(txn.raw_txn_id)}>Undo</button></td>}
                       </tr>

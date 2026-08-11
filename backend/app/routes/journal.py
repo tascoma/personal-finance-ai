@@ -9,10 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents._base import AgentError
-from app.dependencies import get_current_user, get_db_session
+from app.dependencies import get_current_user, get_db_session, get_period_or_404
 from app.models.account import Account
 from app.models.document import Document
 from app.models.journal import JournalEntry, JournalLine
+from app.models.period import Period
 from app.models.raw_transaction import RawTransaction
 from app.schemas.account import AccountRead
 from app.schemas.api_responses import (
@@ -47,12 +48,9 @@ def _build_entry_with_lines(
 @router.get("/periods/{period_id}/journal", response_model=JournalPageResponse)
 async def get_journal_page(
     period_id: uuid.UUID,
+    period: Period = Depends(get_period_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> JournalPageResponse:
-    period = await period_service.get_period(db, period_id)
-    if period is None:
-        raise HTTPException(status_code=404, detail="Period not found")
-
     accounts_result = await db.scalars(
         select(Account).where(Account.is_active.is_(True)).order_by(Account.account_code)
     )
@@ -120,14 +118,15 @@ async def get_journal_page(
     )
 
 
-@router.post("/periods/{period_id}/classify", response_model=CountResult)
+@router.post(
+    "/periods/{period_id}/classify",
+    response_model=CountResult,
+    dependencies=[Depends(get_period_or_404)],
+)
 async def classify_transactions(
     period_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
 ) -> CountResult:
-    period = await period_service.get_period(db, period_id)
-    if period is None:
-        raise HTTPException(status_code=404, detail="Period not found")
     try:
         count = await classify_service.classify_period(db, period_id)
     except AgentError as exc:
@@ -139,11 +138,9 @@ async def classify_transactions(
 @router.post("/periods/{period_id}/post", response_model=CountResult)
 async def post_transactions(
     period_id: uuid.UUID,
+    period: Period = Depends(get_period_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> CountResult:
-    period = await period_service.get_period(db, period_id)
-    if period is None:
-        raise HTTPException(status_code=404, detail="Period not found")
     if period.status != "pending_close":
         raise HTTPException(status_code=400, detail="Posting is only allowed in the journal phase (pending_close)")
     try:
@@ -158,11 +155,9 @@ async def post_transactions(
 async def create_manual_journal_entry(
     period_id: uuid.UUID,
     body: ManualJournalEntryCreate,
+    period: Period = Depends(get_period_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> JournalEntryWithLines:
-    period = await period_service.get_period(db, period_id)
-    if period is None:
-        raise HTTPException(status_code=404, detail="Period not found")
     if period.status == "closed":
         raise HTTPException(status_code=400, detail="Period is closed")
 
@@ -196,11 +191,9 @@ async def create_manual_journal_entry(
 async def delete_journal_entry(
     period_id: uuid.UUID,
     entry_id: uuid.UUID,
+    period: Period = Depends(get_period_or_404),
     db: AsyncSession = Depends(get_db_session),
 ) -> OperationResult:
-    period = await period_service.get_period(db, period_id)
-    if period is None:
-        raise HTTPException(status_code=404, detail="Period not found")
     if period.status == "closed":
         raise HTTPException(status_code=400, detail="Cannot delete entries from a closed period")
     try:

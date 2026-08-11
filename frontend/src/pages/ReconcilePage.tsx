@@ -11,13 +11,29 @@ import WorkflowHint from '../components/WorkflowHint'
 import Banner from '../components/Banner'
 import SvgIcon from '../components/SvgIcon'
 import { useConfirm } from '../hooks/useConfirm'
-import { fmtPeriod } from '../utils/format'
+import { fmtMoney, fmtPeriod } from '../utils/format'
 
 function fmtGap(gap: string) {
   const n = parseFloat(gap)
   if (n === 0) return <span className="color-green">$0.00</span>
   if (Math.abs(n) > 5) return <span className="color-red fw-600">{n.toFixed(2)}</span>
   return <span className="color-amber">{n.toFixed(2)}</span>
+}
+
+/**
+ * Width of a computed-vs-stated comparison bar, as a percentage.
+ *
+ * Guards the shared denominator: when both balances are 0 the old inline
+ * expression divided by zero and produced `width: NaN%`, which the browser
+ * drops, leaving a bar that silently never renders.
+ */
+function barPct(computed: string, stated: string, which: 'computed' | 'stated'): number {
+  const c = parseFloat(computed)
+  const st = parseFloat(stated)
+  const scale = Math.max(Math.abs(c), Math.abs(st))
+  if (!scale || !Number.isFinite(scale)) return 0
+  const value = which === 'computed' ? c : st
+  return Math.min(100, Math.abs(value / scale) * 100)
 }
 
 function fmtSigned(val: string) {
@@ -171,12 +187,12 @@ export default function ReconcilePage({ embedded, periodId: propPeriodId }: Prop
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 120px', gap: 12, alignItems: 'center', marginBottom: 4 }}>
                     <span className="muted" style={{ fontSize: 11.5 }}>Computed</span>
-                    <div className="gap-bar-wrap"><div style={{ height: '100%', width: `${Math.min(100, (parseFloat(d.computed_balance) / Math.max(parseFloat(d.computed_balance), parseFloat(d.stated_balance))) * 100)}%`, background: 'var(--accent)', borderRadius: 4 }} /></div>
+                    <div className="gap-bar-wrap"><div style={{ height: '100%', width: `${barPct(d.computed_balance, d.stated_balance, 'computed')}%`, background: 'var(--accent)', borderRadius: 4 }} /></div>
                     <span className="mono text-right" style={{ fontSize: 12.5 }}>{parseFloat(d.computed_balance).toFixed(2)}</span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 120px', gap: 12, alignItems: 'center' }}>
                     <span className="muted" style={{ fontSize: 11.5 }}>Stated</span>
-                    <div className="gap-bar-wrap"><div style={{ height: '100%', width: `${Math.min(100, (parseFloat(d.stated_balance) / Math.max(parseFloat(d.computed_balance), parseFloat(d.stated_balance))) * 100)}%`, background: gap === 0 ? 'var(--green)' : 'var(--amber)', borderRadius: 4 }} /></div>
+                    <div className="gap-bar-wrap"><div style={{ height: '100%', width: `${barPct(d.computed_balance, d.stated_balance, 'stated')}%`, background: gap === 0 ? 'var(--green)' : 'var(--amber)', borderRadius: 4 }} /></div>
                     <span className="mono text-right" style={{ fontSize: 12.5 }}>{parseFloat(d.stated_balance).toFixed(2)}</span>
                   </div>
                 </div>
@@ -209,9 +225,10 @@ export default function ReconcilePage({ embedded, periodId: propPeriodId }: Prop
           </div>
           {temp_preview.closing_posted && <Banner variant="green" style={{ margin: '0 16px 12px' }}>Closing entries posted</Banner>}
           <div className="card-bd stack gap-3">
-            <div className="spread"><span className="muted">Total income</span><span className="mono color-green fw-600">${fmtSigned(temp_preview.net_income)}</span></div>
+            <div className="spread"><span className="muted">Total income</span><span className="mono color-green fw-600">{fmtMoney(temp_preview.total_income)}</span></div>
+            <div className="spread"><span className="muted">Total expenses</span><span className="mono color-red fw-600">{fmtMoney(temp_preview.total_expenses)}</span></div>
             <div className="divider" style={{ margin: 0 }} />
-            <div className="spread"><span className="fw-600">Net income → Retained Earnings</span><span className="mono color-accent fw-600">{fmtSigned(temp_preview.net_income)}</span></div>
+            <div className="spread"><span className="fw-600">Net income → Retained Earnings</span><span className="mono color-accent fw-600">{fmtMoney(temp_preview.net_income)}</span></div>
           </div>
         </div>
       )}
